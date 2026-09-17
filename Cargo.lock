@@ -156,6 +156,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "qcl-safeops"
+version = "0.1.0"
+dependencies = [
+ "qcl",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
