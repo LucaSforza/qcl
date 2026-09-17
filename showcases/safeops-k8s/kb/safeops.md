@@ -28,13 +28,14 @@ Kubernetes fixtures.
 ## Runtime flow
 
 1. Codex CLI or DeepSeek proposes a typed `ToolIntent`.
-2. A Kubernetes snapshot reader records the relevant resource version and
-   abstract state.
+2. A Kubernetes snapshot reader records a `DeploymentSnapshot`: namespace,
+   workload name, resource version, desired replicas, ready replicas, and
+   image.
 3. The safety kernel resolves the coalition and asks QCL whether that
    coalition can enforce the tool's target formula.
 4. The tool contract enumerates possible abstract outcomes. Every outcome must
    satisfy the safety invariant; a single unsafe outcome denies the request.
-5. The kernel emits a grant bound to the exact intent and snapshot version.
+5. The kernel emits a grant bound to the exact intent and complete snapshot.
 6. A restricted `kubectl` adapter verifies the grant, scope, namespace, and
    current snapshot before applying the exact operation.
 7. The adapter observes the resulting cluster state and records the decision,
@@ -44,6 +45,11 @@ The adapter is the only component with Kubernetes credentials. The LLM never
 receives ambient `kubectl` access, and the safety kernel never treats an LLM
 claim about execution as evidence.
 
+The core invariant requires desired replicas to remain at least two and the
+target namespace to remain unchanged. Readiness is a precondition for restart
+and an observed postcondition of an execution. It does not guarantee runtime
+availability, traffic health, or absence of failures after observation.
+
 ## Kubernetes fixture
 
 The checked-in manifests under `k8s/` provide:
@@ -52,8 +58,8 @@ The checked-in manifests under `k8s/` provide:
 - a two-replica demo Deployment and internal Service;
 - an executor ServiceAccount, Role, and RoleBinding limited to the demo
   namespace and workload resources;
-- a native `ValidatingAdmissionPolicy` and binding that rejects a Deployment,
-  StatefulSet, or ReplicaSet with `spec.replicas < 2`.
+- a native `ValidatingAdmissionPolicy` and binding that rejects a Deployment or
+  StatefulSet with `spec.replicas < 2`, including their `/scale` subresources.
 
 The policy is a defense-in-depth control. It does not replace grant checking,
 RBAC, or review of the exact operation. Applying manifests is intentionally

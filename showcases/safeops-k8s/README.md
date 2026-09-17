@@ -26,11 +26,20 @@ The scenario demonstrates an allowed restart, stale snapshot-grant rejection,
 human-gated deployment, and deletion blocked by an unsafe outcome. It does not
 call an LLM or a cluster and prints no chain-of-thought.
 
+The kernel models a `DeploymentSnapshot` (namespace, workload name, resource
+version, desired/ready replicas, and image) and typed actions such as inspect,
+restart, rollback, scale, image update, and namespace deletion. Grants bind to
+the complete snapshot. The safety invariant keeps desired replicas at least
+two and preserves the namespace. Readiness is checked as an action
+precondition/postcondition; it is an observation, not a runtime availability
+guarantee.
+
 ## Kubernetes fixture
 
 The manifests describe a `safeops-demo` namespace, a two-replica demo service,
 a least-privilege executor service account/RBAC role, and a native
-`ValidatingAdmissionPolicy` rejecting workloads with `spec.replicas < 2`.
+`ValidatingAdmissionPolicy` rejecting Deployment/StatefulSet workloads with
+`spec.replicas < 2`, including `/scale` requests.
 Review them before applying to a disposable kind cluster. The admission policy
 requires a Kubernetes version that supports the native policy APIs.
 

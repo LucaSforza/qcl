@@ -9,7 +9,11 @@ spec:
       - apiGroups: ["apps"]
         apiVersions: ["v1"]
         operations: ["CREATE", "UPDATE"]
-        resources: ["deployments", "statefulsets", "replicasets"]
+        resources:
+          - "deployments"
+          - "deployments/scale"
+          - "statefulsets"
+          - "statefulsets/scale"
   validations:
     - expression: "has(object.spec.replicas) && object.spec.replicas >= 2"
       message: "SafeOps workloads must run at least two replicas"

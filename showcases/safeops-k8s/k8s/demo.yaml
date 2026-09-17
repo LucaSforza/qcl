@@ -7,6 +7,11 @@ metadata:
     app.kubernetes.io/name: safeops-demo
 spec:
   replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: safeops-demo
@@ -17,10 +22,18 @@ spec:
     spec:
       containers:
         - name: app
-          image: registry.k8s.io/pause:3.10
+          image: nginx:1.27.5-alpine
+          imagePullPolicy: IfNotPresent
           ports:
             - name: http
-              containerPort: 8080
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 1
+            failureThreshold: 6
           resources:
             requests:
               cpu: 10m
