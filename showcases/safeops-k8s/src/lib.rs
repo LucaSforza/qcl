@@ -1,12 +1,14 @@
 //! A side-effect-free Kubernetes `SafeOps` policy gateway built on QCL.
 
 mod kernel;
+mod llm;
 
 pub use kernel::{
     Action, Approval, AuditEvent, Decision, Denial, DeploymentSnapshot, ExecutionGrant,
     ExecutionPermit, Principal, RolloutStrategy, SafeOpsError, SafetyKernel, SnapshotError,
     ToolIntent,
 };
+pub use llm::{ActionProvider, CodexProvider, DeepSeekProvider, LlmError, provider_from_env};
 
 /// Returns the package name used by the showcase.
 pub const PACKAGE_NAME: &str = "safeops-k8s";
