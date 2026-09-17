@@ -2,7 +2,7 @@
 
 `qcl-safeops` is an optional, unpublished local showcase of a deterministic
 safety gateway built on the published `qcl` package. It demonstrates typed tool
-intents, QCL coalition checks, outcome safety checks, version-bound grants, and
+intents, QCL coalition checks, outcome safety checks, snapshot-bound grants, and
 an audit trail against a local simulator.
 
 Run it from the repository root:

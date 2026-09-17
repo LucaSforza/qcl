@@ -7,7 +7,7 @@ currently delivers a deterministic local showcase with:
 
 - typed tool intents, approvals, execution grants, and structured denials;
 - QCL coalition checks plus an all-outcomes safety check before granting;
-- version-bound, single-use grants rejected by the simulator when stale or
+- snapshot-bound, single-use grants rejected by the simulator when stale or
   replayed;
 - proposal, decision, and execution audit events;
 - a stable CLI scenario covering restart, stale-grant rejection, human-gated
@@ -72,9 +72,9 @@ Normal gate:
 
 ```text
 cargo fmt --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-targets --all-features
-RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-targets --all-features
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items
 ```
 
 Terminal behavior additionally requires a PTY smoke test: execute one command,

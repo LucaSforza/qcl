@@ -37,7 +37,7 @@ The showcase uses these stages:
 4. enumerate the tool contract's possible outcome states and require every one
    to satisfy the configured safety invariant;
 5. emit either a structured denial or an execution grant bound to the exact
-   intent and world-state version;
+   intent and complete world-state snapshot;
 6. let the simulator execute only a matching, current grant;
 7. append the proposal, decision, and execution result to an audit trail.
 

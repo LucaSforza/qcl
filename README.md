@@ -69,9 +69,9 @@ Format, lint, test, and build the documentation with:
 
 ```bash
 cargo fmt --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-targets --all-features
-RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-targets --all-features
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items
 ```
 
 The project knowledge base in [`kb/`](kb/) documents the architecture,

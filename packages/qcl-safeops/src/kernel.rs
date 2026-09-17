@@ -3,7 +3,7 @@ use std::fmt;
 
 use qcl::ast::{CoalitionPredicate, Formula};
 use qcl::checker::ModelChecker;
-use qcl::domain::{AgentId, Coalition, StateId};
+use qcl::domain::{Coalition, StateId};
 use qcl::model::{ModelValidator, QclModel};
 use qcl::parser::{parse_formula, parse_model};
 
@@ -229,9 +229,9 @@ impl Approval {
 pub enum Denial {
     UnauthorizedActor { actor: Principal },
     VersionMismatch { expected: u64, actual: u64 },
-    MissingApproval { required: Principal },
     Precondition { tool: Tool, state: SystemState },
     PolicyRejected { tool: Tool, state: SystemState },
+    PolicyFailure { tool: Tool, message: String },
     UnsafeOutcome { tool: Tool, state: SystemState },
 }
 
@@ -245,10 +245,12 @@ impl fmt::Display for Denial {
                     "snapshot version {actual} does not match intent version {expected}"
                 )
             }
-            Self::MissingApproval { required } => write!(f, "missing approval from {required}"),
             Self::Precondition { tool, state } => write!(f, "{tool} is not valid in state {state}"),
             Self::PolicyRejected { tool, state } => {
                 write!(f, "QCL policy rejects {tool} in state {state}")
+            }
+            Self::PolicyFailure { tool, message } => {
+                write!(f, "QCL policy check failed for {tool}: {message}")
             }
             Self::UnsafeOutcome { tool, state } => {
                 write!(f, "{tool} declares unsafe outcome state {state}")
@@ -266,7 +268,7 @@ pub enum Decision {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecutionGrant {
     intent: ToolIntent,
-    coalition: Coalition,
+    snapshot: WorldState,
     grant_id: u64,
 }
 
@@ -291,16 +293,25 @@ pub enum AuditEvent {
         from: WorldState,
         to: WorldState,
     },
+    ExecutionRejected {
+        tool: Tool,
+        at: WorldState,
+        error: SafeOpsError,
+    },
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SafeOpsError {
     PolicyParse(String),
     PolicyInvalid(String),
     PolicyFormula(String),
-    GrantMismatch { expected: u64, actual: u64 },
-    StaleGrant { expected: u64, actual: u64 },
-    ReplayedGrant { grant_id: u64 },
+    StaleGrant {
+        expected: WorldState,
+        actual: WorldState,
+    },
+    ReplayedGrant {
+        grant_id: u64,
+    },
 }
 
 impl fmt::Display for SafeOpsError {
@@ -309,16 +320,11 @@ impl fmt::Display for SafeOpsError {
             Self::PolicyParse(error) => write!(f, "policy parse failed: {error}"),
             Self::PolicyInvalid(error) => write!(f, "policy validation failed: {error}"),
             Self::PolicyFormula(error) => write!(f, "policy formula failed: {error}"),
-            Self::GrantMismatch { expected, actual } => {
-                write!(
-                    f,
-                    "grant version {actual} does not match intent version {expected}"
-                )
-            }
             Self::StaleGrant { expected, actual } => {
                 write!(
                     f,
-                    "grant version {expected} is stale at simulator version {actual}"
+                    "grant for {} version {} is stale at {} version {}",
+                    expected.state, expected.version, actual.state, actual.version
                 )
             }
             Self::ReplayedGrant { grant_id } => write!(f, "grant {grant_id} was already used"),
@@ -387,13 +393,25 @@ impl SafetyKernel {
         simulator: &mut Simulator,
         grant: ExecutionGrant,
     ) -> Result<ExecutionReceipt, SafeOpsError> {
-        let receipt = simulator.execute(grant)?;
-        self.audit.push(AuditEvent::Execution {
-            tool: receipt.tool,
-            from: receipt.from,
-            to: receipt.to,
-        });
-        Ok(receipt)
+        let tool = grant.intent.tool;
+        match simulator.execute(grant) {
+            Ok(receipt) => {
+                self.audit.push(AuditEvent::Execution {
+                    tool: receipt.tool,
+                    from: receipt.from,
+                    to: receipt.to,
+                });
+                Ok(receipt)
+            }
+            Err(error) => {
+                self.audit.push(AuditEvent::ExecutionRejected {
+                    tool,
+                    at: simulator.current(),
+                    error: error.clone(),
+                });
+                Err(error)
+            }
+        }
     }
 
     fn authorize_inner(
@@ -419,71 +437,34 @@ impl SafetyKernel {
                 state: snapshot.state,
             });
         }
-        if matches!(intent.tool, Tool::DeployRelease | Tool::DeleteResource)
-            && !approvals
-                .iter()
-                .any(|approval| approval.principal == Principal::HumanOperator)
-        {
-            return Decision::Deny(Denial::MissingApproval {
-                required: Principal::HumanOperator,
-            });
-        }
-
-        let coalition = coalition_for(intent.tool, approvals);
-        let Ok(source) = self.state_id(snapshot.state) else {
-            return Decision::Deny(Denial::PolicyRejected {
-                tool: intent.tool,
-                state: snapshot.state,
-            });
+        let coalition = match coalition_for(&self.model, intent.tool, approvals) {
+            Ok(coalition) => coalition,
+            Err(error) => return policy_failure(intent.tool, error),
         };
-        let Ok(target) = self.formula_for(intent.tool) else {
-            return Decision::Deny(Denial::PolicyRejected {
-                tool: intent.tool,
-                state: snapshot.state,
-            });
-        };
-        let predicate = CoalitionPredicate::and(
-            CoalitionPredicate::superset_eq(coalition.clone()),
-            CoalitionPredicate::subset_eq(coalition.clone()),
-        );
-        let policy = Formula::exists(predicate, target);
-        if !ModelChecker::new(&self.model)
-            .check(source, &policy)
-            .unwrap_or(false)
-        {
-            return Decision::Deny(Denial::PolicyRejected {
-                tool: intent.tool,
-                state: snapshot.state,
-            });
-        }
-
-        for outcome in outcomes(intent.tool, snapshot.state) {
-            let Ok(outcome_id) = self.state_id(outcome) else {
-                return Decision::Deny(Denial::UnsafeOutcome {
+        match self.coalition_can_enforce(intent.tool, snapshot.state, &coalition) {
+            Ok(true) => {}
+            Ok(false) => {
+                return Decision::Deny(Denial::PolicyRejected {
                     tool: intent.tool,
-                    state: outcome,
-                });
-            };
-            let Ok(safe) = self.safe_formula() else {
-                return Decision::Deny(Denial::UnsafeOutcome {
-                    tool: intent.tool,
-                    state: outcome,
-                });
-            };
-            if !ModelChecker::new(&self.model)
-                .check(outcome_id, &safe)
-                .unwrap_or(false)
-            {
-                return Decision::Deny(Denial::UnsafeOutcome {
-                    tool: intent.tool,
-                    state: outcome,
+                    state: snapshot.state,
                 });
             }
+            Err(error) => return policy_failure(intent.tool, error),
+        }
+        match self.first_unsafe_outcome(intent.tool, snapshot.state) {
+            Ok(Some(state)) => {
+                return Decision::Deny(Denial::UnsafeOutcome {
+                    tool: intent.tool,
+                    state,
+                });
+            }
+            Ok(None) => {}
+            Err(error) => return policy_failure(intent.tool, error),
         }
 
         let grant = ExecutionGrant {
             intent: *intent,
-            coalition,
+            snapshot: *snapshot,
             grant_id: self.next_grant_id,
         };
         self.next_grant_id = self.next_grant_id.saturating_add(1);
@@ -512,18 +493,70 @@ impl SafetyKernel {
     fn safe_formula(&self) -> Result<Formula, SafeOpsError> {
         self.formula_for(Tool::RestartCanary)
     }
+
+    fn coalition_can_enforce(
+        &self,
+        tool: Tool,
+        state: SystemState,
+        coalition: &Coalition,
+    ) -> Result<bool, SafeOpsError> {
+        let predicate = CoalitionPredicate::and(
+            CoalitionPredicate::superset_eq(coalition.clone()),
+            CoalitionPredicate::subset_eq(coalition.clone()),
+        );
+        let policy = Formula::exists(predicate, self.formula_for(tool)?);
+        ModelChecker::new(&self.model)
+            .check(self.state_id(state)?, &policy)
+            .map_err(|error| SafeOpsError::PolicyFormula(error.to_string()))
+    }
+
+    fn first_unsafe_outcome(
+        &self,
+        tool: Tool,
+        current: SystemState,
+    ) -> Result<Option<SystemState>, SafeOpsError> {
+        let safe = self.safe_formula()?;
+        let checker = ModelChecker::new(&self.model);
+        for outcome in outcomes(tool, current) {
+            let is_safe = checker
+                .check(self.state_id(outcome)?, &safe)
+                .map_err(|error| SafeOpsError::PolicyFormula(error.to_string()))?;
+            if !is_safe {
+                return Ok(Some(outcome));
+            }
+        }
+        Ok(None)
+    }
 }
 
-fn coalition_for(tool: Tool, approvals: &[Approval]) -> Coalition {
-    let mut coalition = Coalition::from_agents([AgentId::new(0), AgentId::new(2)]);
+fn policy_failure(tool: Tool, error: impl fmt::Display) -> Decision {
+    Decision::Deny(Denial::PolicyFailure {
+        tool,
+        message: error.to_string(),
+    })
+}
+
+fn coalition_for(
+    model: &QclModel,
+    tool: Tool,
+    approvals: &[Approval],
+) -> Result<Coalition, SafeOpsError> {
+    let agent = |principal: Principal| {
+        model
+            .agents
+            .lookup(&principal.to_string())
+            .map_err(|error| SafeOpsError::PolicyFormula(error.to_string()))
+    };
+    let mut coalition =
+        Coalition::from_agents([agent(Principal::OperatorLlm)?, agent(Principal::Executor)?]);
     if matches!(tool, Tool::DeployRelease | Tool::DeleteResource)
         && approvals
             .iter()
             .any(|approval| approval.principal == Principal::HumanOperator)
     {
-        coalition.insert(AgentId::new(1));
+        coalition.insert(agent(Principal::HumanOperator)?);
     }
-    coalition
+    Ok(coalition)
 }
 
 fn outcomes(tool: Tool, current: SystemState) -> impl Iterator<Item = SystemState> {
@@ -567,20 +600,23 @@ impl Simulator {
     /// # Errors
     ///
     /// Returns an error when the grant is stale or has already been used.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "execution consumes the capability even though its fields are copyable"
+    )]
     pub fn execute(&mut self, grant: ExecutionGrant) -> Result<ExecutionReceipt, SafeOpsError> {
         let ExecutionGrant {
             intent,
-            coalition,
+            snapshot,
             grant_id,
         } = grant;
-        drop(coalition);
         if self.used_grants.contains(&grant_id) {
             return Err(SafeOpsError::ReplayedGrant { grant_id });
         }
-        if intent.snapshot_version != self.current.version {
+        if snapshot != self.current {
             return Err(SafeOpsError::StaleGrant {
-                expected: intent.snapshot_version,
-                actual: self.current.version,
+                expected: snapshot,
+                actual: self.current,
             });
         }
         self.used_grants.insert(grant_id);

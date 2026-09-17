@@ -6,8 +6,9 @@ license = "AGPL-3.0-only"
 description = "Model checker and inference engine for Quantified Coalition Logic"
 include = [
     "src/**",
-    "tests/**",
     "examples/**",
+    "kb/dsl.md",
+    "kb/tutorial.md",
     "README.md",
     "LICENSE",
     "Cargo.toml",

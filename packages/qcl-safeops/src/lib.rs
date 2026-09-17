@@ -53,8 +53,13 @@ pub fn run_demo() -> Result<String, SafeOpsError> {
         .iter()
         .filter(|event| matches!(event, AuditEvent::Execution { .. }))
         .count();
+    let rejected_executions = kernel
+        .audit()
+        .iter()
+        .filter(|event| matches!(event, AuditEvent::ExecutionRejected { .. }))
+        .count();
     output.push(format!(
-        "Audit summary: {proposals} proposals, {allowed} allowed, {denied} denied, {executions} executions"
+        "Audit summary: {proposals} proposals, {allowed} allowed, {denied} denied, {executions} executions, execution rejections: {rejected_executions}"
     ));
 
     Ok(output.join("\n"))
@@ -180,14 +185,14 @@ mod tests {
     }
 
     #[test]
-    fn deploy_requires_human_coalition_member() {
+    fn deploy_without_human_is_rejected_by_qcl() {
         let mut kernel = kernel();
         let intent = ToolIntent::new(Principal::OperatorLlm, Tool::DeployRelease, 0);
         let decision = kernel.authorize(&intent, &WorldState::new(SystemState::Degraded, 0), &[]);
 
         assert!(matches!(
             decision,
-            Decision::Deny(Denial::MissingApproval { .. })
+            Decision::Deny(Denial::PolicyRejected { .. })
         ));
     }
 
@@ -233,12 +238,38 @@ mod tests {
             Decision::Allow(grant) => grant,
             other @ Decision::Deny(_) => panic!("expected second grant, got {other:?}"),
         };
+        let replay = first.clone();
 
         let mut simulator = Simulator::new(snapshot);
         assert!(simulator.execute(first).is_ok());
         assert!(matches!(
+            simulator.execute(replay),
+            Err(SafeOpsError::ReplayedGrant { .. })
+        ));
+        assert!(matches!(
             simulator.execute(second),
             Err(SafeOpsError::StaleGrant { .. })
+        ));
+    }
+
+    #[test]
+    fn grant_is_bound_to_the_complete_world_snapshot() {
+        let mut kernel = kernel();
+        let authorized_snapshot = WorldState::new(SystemState::Degraded, 0);
+        let intent = ToolIntent::new(Principal::OperatorLlm, Tool::RestartCanary, 0);
+        let grant = match kernel.authorize(&intent, &authorized_snapshot, &[]) {
+            Decision::Allow(grant) => grant,
+            other @ Decision::Deny(_) => panic!("expected grant, got {other:?}"),
+        };
+        let mut different_world = Simulator::new(WorldState::new(SystemState::Stable, 0));
+
+        assert!(matches!(
+            kernel.execute(&mut different_world, grant),
+            Err(SafeOpsError::StaleGrant { .. })
+        ));
+        assert!(matches!(
+            kernel.audit().last(),
+            Some(AuditEvent::ExecutionRejected { .. })
         ));
     }
 
@@ -261,11 +292,11 @@ mod tests {
             "restart_canary: ALLOW",
             "restart_canary: EXECUTED -> restarted (version 1)",
             "restart_canary: DENY (stale grant)",
-            "deploy_release: DENY (missing approval from human_operator)",
+            "deploy_release: DENY (QCL policy rejects deploy_release in state restarted)",
             "deploy_release: ALLOW",
             "deploy_release: EXECUTED -> deployed (version 2)",
             "delete_resource: DENY (unsafe outcome: deleted)",
-            "Audit summary: 5 proposals, 3 allowed, 2 denied, 2 executions",
+            "Audit summary: 5 proposals, 3 allowed, 2 denied, 2 executions, execution rejections: 1",
         ] {
             assert!(
                 output.contains(expected),
