@@ -1,6 +1,7 @@
 //! A side-effect-free Kubernetes `SafeOps` policy gateway built on QCL.
 
 mod kernel;
+mod kubernetes;
 mod llm;
 
 pub use kernel::{
@@ -8,6 +9,7 @@ pub use kernel::{
     ExecutionPermit, Principal, RolloutStrategy, SafeOpsError, SafetyKernel, SnapshotError,
     ToolIntent,
 };
+pub use kubernetes::{AdapterError, ExecutionResult, KubectlAdapter};
 pub use llm::{ActionProvider, CodexProvider, DeepSeekProvider, LlmError, provider_from_env};
 
 /// Returns the package name used by the showcase.

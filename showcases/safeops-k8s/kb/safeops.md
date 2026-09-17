@@ -86,8 +86,15 @@ namespace, least-privilege credentials, bounded timeouts, and cleanup with an
 explicit operator choice. No live test may target a context or namespace
 outside its declared allowlist.
 
-The current package does not yet ship the LLM or `kubectl` adapters, live test
-runner, durable audit storage, cryptographic grant signatures, distributed
-locking, secret-management integration, or production rollout controls. The
-Rust CLI remains a local deterministic kernel scenario until those components
-are implemented and separately audited.
+The package ships the LLM and `kubectl` adapters as opt-in integrations. The
+`KubectlAdapter` is bounded and allowlisted to the fixture context, namespace,
+and Deployment, and always supplies explicit context, namespace, and executor
+impersonation. It rejects namespace deletion before any command. It rereads
+the snapshot before consuming a grant and observes it after mutations, but
+this is not transactional: a concurrent Kubernetes change can still occur
+between validation, grant consumption, and the `kubectl` mutation. Stronger
+server-side concurrency preconditions remain a production concern.
+
+Durable audit storage, cryptographic grant signatures, distributed locking,
+secret-management integration, and production rollout controls remain out of
+scope for this showcase.
