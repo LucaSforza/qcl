@@ -55,6 +55,91 @@ target namespace to remain unchanged. Readiness is a precondition for restart
 and an observed postcondition of an execution. It does not guarantee runtime
 availability, traffic health, or absence of failures after observation.
 
+## Interactive CLI contract
+
+The showcase CLI is a thin session viewer and orchestrator. It must not become
+an alternative policy engine. It keeps one in-memory timeline for the current
+session; durable audit storage remains out of scope. Interactive mode is
+read-only until the operator explicitly starts an execution cycle.
+
+Minimum commands:
+
+- `snapshot`: read and render the current allowlisted Deployment snapshot;
+- `run`: perform one bounded cycle through LLM proposal, typed parsing, QCL
+  decision, and grant creation, without mutating Kubernetes;
+- `execute`: execute the current valid grant only after an explicit operator
+  confirmation, then read and render the post-snapshot;
+- `timeline`: render the ordered events collected in the current session;
+- `help` and `quit`.
+
+`execute` must refuse when no current grant exists, when the grant is stale or
+already consumed, when confirmation is absent, or when any precondition fails.
+There is no command that accepts arbitrary shell text or arbitrary `kubectl`
+arguments. A non-interactive invocation may select the provider and timeout,
+but must preserve the same allowlist and confirmation boundary.
+
+## Timeline event contract
+
+Each event has a monotonic sequence number, a local timestamp, a stage, a
+status, and a bounded human-readable summary. The renderer shows these fields
+plus safe typed metadata; it never prints raw prompts, raw provider responses,
+HTTP headers, environment variables, kubeconfig contents, credentials, or
+model chain-of-thought.
+
+Expected stages for one cycle are:
+
+1. `snapshot.read` — snapshot obtained or rejected;
+2. `llm.request` — provider and timeout selected, without secret values;
+3. `llm.proposal` — typed action parsed, or provider/parse failure;
+4. `qcl.decision` — allow/deny and compact policy reason;
+5. `grant.issued` or `grant.rejected` — snapshot-bound grant result;
+6. `kubectl.start` and `kubectl.result` — bounded adapter operation, only for
+   an explicitly confirmed execution;
+7. `snapshot.post` — observed postcondition, or observation failure;
+8. `cycle.failed` — terminal fail-closed outcome when any required stage fails.
+
+Denied actions and errors remain visible in the timeline. They must be
+represented by typed status and redacted error summaries, not by printing
+provider explanations. The timeline is explanatory UI, not evidence that an
+operation succeeded: only the adapter result and post-snapshot establish
+execution outcome.
+
+## Interactive safety flow
+
+`run` follows this exact order: read snapshot → ask selected LLM for one typed
+intent → parse and validate intent → evaluate QCL contract → issue a
+snapshot-bound grant or deny. `execute` then re-reads the snapshot → verifies
+grant identity, scope, expiry, and snapshot equality → consumes grant once →
+invokes the restricted `kubectl` adapter → reads post-snapshot → records
+postcondition result. The LLM never receives a grant and never executes a
+Kubernetes command.
+
+Every failure is fail-closed. Provider timeout or malformed output, unknown
+action, snapshot read error, QCL denial, grant mismatch/replay, operator
+decline, adapter timeout/non-zero exit, or postcondition mismatch produces no
+further mutation and a terminal `cycle.failed`/denied event. A successful
+`kubectl` process without a valid post-snapshot is not reported as success.
+
+## CLI acceptance criteria
+
+The interactive showcase is complete only when all criteria hold:
+
+- a fresh session exposes exactly the minimum commands above and starts with
+  no execution grant;
+- `run` renders ordered LLM → parse → QCL → grant events and performs no
+  Kubernetes mutation;
+- `execute` requires explicit confirmation, executes only a valid current
+  grant, and renders adapter plus post-snapshot events;
+- an unsafe proposal (for example scaling below two replicas) is visibly
+  denied before `kubectl` starts, while direct admission-policy rejection is
+  also visible in live tests;
+- replaying a consumed grant, changing the Deployment resource version, or
+  losing snapshot/postcondition access ends cycle without mutation;
+- provider secrets, Kubernetes credentials, raw model output, and
+  chain-of-thought are absent from terminal output and timeline summaries;
+- timeline output stays bounded and remains usable when provider or cluster is
+  unavailable; no failure falls through to an unguarded shell command.
+
 ## Kubernetes fixture
 
 The checked-in manifests under `k8s/` provide:
