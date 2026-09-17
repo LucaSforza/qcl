@@ -2,7 +2,7 @@
 name = "qcl"
 version = "0.1.0"
 edition = "2024"
-license = "MIT"
+license = "AGPL-3.0-only"
 description = "Model checker and inference engine for Quantified Coalition Logic"
 
 [workspace]
