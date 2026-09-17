@@ -1,0 +1,43 @@
+# Three voters choose between two mutually exclusive outcomes.
+#
+# Coalitions of at least two voters can force either outcome.  The effectivity
+# entries keep only the minimal outcomes; the universe is implicit above each
+# singleton outcome, and is listed explicitly for smaller coalitions.
+model {
+  agents { alice, bob, carol };
+  states { coffee_outcome, tea_outcome };
+  props { coffee, tea };
+
+  valuation {
+    coffee_outcome: { coffee };
+    tea_outcome: { tea };
+  };
+
+  effectivity {
+    coffee_outcome, {} -> { coffee_outcome, tea_outcome };
+    coffee_outcome, { alice } -> { coffee_outcome, tea_outcome };
+    coffee_outcome, { bob } -> { coffee_outcome, tea_outcome };
+    coffee_outcome, { carol } -> { coffee_outcome, tea_outcome };
+    coffee_outcome, { alice, bob } -> { coffee_outcome };
+    coffee_outcome, { alice, bob } -> { tea_outcome };
+    coffee_outcome, { alice, carol } -> { coffee_outcome };
+    coffee_outcome, { alice, carol } -> { tea_outcome };
+    coffee_outcome, { bob, carol } -> { coffee_outcome };
+    coffee_outcome, { bob, carol } -> { tea_outcome };
+    coffee_outcome, { alice, bob, carol } -> { coffee_outcome };
+    coffee_outcome, { alice, bob, carol } -> { tea_outcome };
+
+    tea_outcome, {} -> { coffee_outcome, tea_outcome };
+    tea_outcome, { alice } -> { coffee_outcome, tea_outcome };
+    tea_outcome, { bob } -> { coffee_outcome, tea_outcome };
+    tea_outcome, { carol } -> { coffee_outcome, tea_outcome };
+    tea_outcome, { alice, bob } -> { coffee_outcome };
+    tea_outcome, { alice, bob } -> { tea_outcome };
+    tea_outcome, { alice, carol } -> { coffee_outcome };
+    tea_outcome, { alice, carol } -> { tea_outcome };
+    tea_outcome, { bob, carol } -> { coffee_outcome };
+    tea_outcome, { bob, carol } -> { tea_outcome };
+    tea_outcome, { alice, bob, carol } -> { coffee_outcome };
+    tea_outcome, { alice, bob, carol } -> { tea_outcome };
+  };
+}

@@ -1,0 +1,23 @@
+model {
+  agents { alice, bob };
+  states { s0, s1 };
+  props { ready, done };
+  valuation {
+    s0: { ready };
+    s1: { done };
+  };
+  effectivity {
+    s0, {} -> { s0, s1 };
+    s0, { alice } -> { s0, s1 };
+    s0, { bob } -> { s0, s1 };
+    s0, { alice, bob } -> { s0, s1 };
+    s0, { alice, bob } -> { s0 };
+    s0, { alice, bob } -> { s1 };
+    s1, {} -> { s0, s1 };
+    s1, { alice } -> { s0, s1 };
+    s1, { bob } -> { s0, s1 };
+    s1, { alice, bob } -> { s0, s1 };
+    s1, { alice, bob } -> { s0 };
+    s1, { alice, bob } -> { s1 };
+  };
+}

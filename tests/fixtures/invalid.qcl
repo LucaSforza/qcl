@@ -1,0 +1,9 @@
+model {
+  agents { alice };
+  states { s0 };
+  props { ready };
+  valuation { s0: { ready }; };
+  effectivity {
+    s0, {} -> { missing };
+  };
+}
