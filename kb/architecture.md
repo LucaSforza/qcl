@@ -55,6 +55,24 @@ Outcome monotonicity follows by construction. Remaining weak-playability propert
 - `inference`: model-relative consequence.
 - `repl`: linenoise adapter and commands.
 
+## Companion packages
+
+The repository may contain independent workspace packages that consume `qcl`,
+but the published `qcl` package remains the domain-neutral model checker and
+REPL. Companion applications must not add LLM, tool-execution, approval, or
+credential concepts to the core crate.
+
+`qcl-safeops` is an optional, unpublished showcase package. It translates
+typed tool intents into QCL coalition checks and separately verifies that every
+declared tool outcome satisfies a safety invariant. It owns its simulator,
+tool contracts, grants, audit records, and command-line demonstration. The
+core crate owns parsing, validation, model checking, and inference only.
+
+The workspace and release boundary are distinct: a source checkout may contain
+both packages, while `cargo install qcl` and the packaged `qcl` crate must not
+contain or build the showcase. See [`safeops.md`](safeops.md) for the complete
+contract.
+
 ## Runtime and native boundary
 
 `Repl` and its command dispatcher contain no terminal dependency and remain

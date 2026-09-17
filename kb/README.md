@@ -8,5 +8,7 @@ This directory is authoritative for project architecture and user-visible langua
 - `tutorial.md`: step-by-step majority-voting model, model checking, and inference walkthrough.
 - `testing.md`: TDD strategy and acceptance tests.
 - `uml.md`: Mermaid component and type diagrams.
+- `safeops.md`: package boundary and safety contract for the optional agent-tool
+  showcase.
 
 Update these documents when implementation changes a recorded contract.
