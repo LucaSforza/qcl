@@ -2,6 +2,22 @@
 
 ## Delivered capabilities
 
+The workspace also includes an optional, unpublished `qcl-safeops` package. It
+currently delivers a deterministic local showcase with:
+
+- typed tool intents, approvals, execution grants, and structured denials;
+- QCL coalition checks plus an all-outcomes safety check before granting;
+- version-bound, single-use grants rejected by the simulator when stale or
+  replayed;
+- proposal, decision, and execution audit events;
+- a stable CLI scenario covering restart, stale-grant rejection, human-gated
+  deployment, unsafe deletion, and an audit summary.
+
+The showcase is a local simulator only: it does not call a real LLM or tools,
+provide credential isolation, use cryptographic signatures, persist audits, or
+coordinate distributed execution. It remains outside the published `qcl`
+package even though both packages live in this Cargo workspace.
+
 The `qcl` crate currently provides:
 
 - typed dense IDs for agents, states, and propositions;
@@ -65,4 +81,3 @@ Terminal behavior additionally requires a PTY smoke test: execute one command,
 recall it with UP, and complete `:tut` with TAB. Unit tests cover completion
 selection, history path selection, native history add/read/save/load, and the
 `TERM=dumb` compatibility policy.
-

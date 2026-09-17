@@ -77,6 +77,16 @@ RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items
 The project knowledge base in [`kb/`](kb/) documents the architecture,
 implementation status, testing strategy, and language decisions.
 
+## Optional SafeOps showcase
+
+The workspace also contains an unpublished `qcl-safeops` package. It is a
+separate local simulator demonstrating QCL-backed tool-call authorization; it
+is not included in the published `qcl` package.
+
+```bash
+cargo run -p qcl-safeops
+```
+
 ## License
 
 QCL is distributed under the GNU Affero General Public License, version 3.
