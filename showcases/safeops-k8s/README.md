@@ -11,10 +11,10 @@ The intended LLM adapters are:
 - Codex CLI, authenticated through a user's subscription;
 - DeepSeek API, authenticated with a user-provided API key.
 
-The repository currently contains the deterministic Rust kernel and the
-declarative Kubernetes fixture under [`k8s/`](k8s/). Live cluster execution is
-opt-in and remains a future adapter; the fixture is not applied by building or
-testing this package.
+The repository contains the deterministic Rust kernel, real Codex and DeepSeek
+providers, a bounded `kubectl` adapter, and the declarative Kubernetes fixture
+under [`k8s/`](k8s/). Live execution is opt-in; normal builds and tests never
+contact a provider or cluster.
 
 ## Run the local kernel scenario
 
@@ -22,9 +22,9 @@ testing this package.
 cargo run -p safeops-k8s
 ```
 
-The scenario demonstrates an allowed restart, stale snapshot-grant rejection,
-human-gated deployment, and deletion blocked by an unsafe outcome. It does not
-call an LLM or a cluster and prints no chain-of-thought.
+The scenario demonstrates policy decisions only: safe operations, a
+human-gated image update, and deletion blocked by an unsafe outcome. It does
+not claim that an operation was executed and prints no chain-of-thought.
 
 The kernel models a `DeploymentSnapshot` (namespace, workload name, resource
 version, desired/ready replicas, and image) and typed actions such as inspect,
@@ -43,6 +43,27 @@ a least-privilege executor service account/RBAC role, and a native
 Review them before applying to a disposable kind cluster. The admission policy
 requires a Kubernetes version that supports the native policy APIs.
 
+Create the dedicated cluster, then apply and verify the fixture against its
+exact allowlisted context:
+
+```bash
+kind create cluster --name safeops-qcl
+showcases/safeops-k8s/scripts/live-test.sh
+```
+
+Run real integrations explicitly:
+
+```bash
+SAFEOPS_LLM_PROVIDER=codex \
+  cargo test -p safeops-k8s --test live_llm -- --ignored --nocapture
+SAFEOPS_LLM_PROVIDER=codex \
+  cargo test -p safeops-k8s --test live_e2e -- --ignored --nocapture
+cargo test -p safeops-k8s --test live_kubernetes -- --ignored --nocapture
+```
+
+For DeepSeek, select `SAFEOPS_LLM_PROVIDER=deepseek` and supply
+`DEEPSEEK_API_KEY`; optional `DEEPSEEK_MODEL` overrides `deepseek-chat`.
+
 ## Trust boundary and limits
 
 The QCL kernel, policy/model, snapshot reader, grant verifier, and executor
@@ -52,6 +73,13 @@ it does not prove that Kubernetes, the LLM, the host, or credentials are
 honest. This example has no production hardening, cryptographic attestation,
 durable audit store, distributed locking, secret-management boundary, or
 guarantee against failures between an adapter write and its observation.
+
+The Codex subscription path starts a local Codex agent in an isolated temporary
+working directory with an ephemeral session, ignored user configuration/rules,
+read-only sandbox, stripped provider/Kubernetes environment variables, and
+structured output. Codex CLI and its host sandbox remain trusted components;
+this path is not equivalent to a tool-free model API. DeepSeek receives only
+the serialized snapshot and goal over an HTTPS API request.
 
 The published `qcl` package remains domain-neutral and does not contain this
 showcase.

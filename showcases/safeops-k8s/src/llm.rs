@@ -10,7 +10,10 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+#[cfg(unix)]
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
 use reqwest::blocking::Client;
 use serde_json::{Map, Value, json};
@@ -118,17 +121,25 @@ impl ActionProvider for CodexProvider {
         snapshot: &DeploymentSnapshot,
         goal: &str,
     ) -> Result<Action, LlmError> {
-        let output_path = unique_temp_path("safeops-codex-response", "json");
-        let schema_path = unique_temp_path("safeops-codex-schema", "json");
+        let work_dir = unique_temp_path("safeops-codex", "work");
+        create_private_dir(&work_dir)?;
+        let output_path = work_dir.join("response.json");
+        let schema_path = work_dir.join("schema.json");
         write_new_file(&schema_path, CODEX_OUTPUT_SCHEMA.as_bytes())?;
         let prompt = prompt_for(snapshot, goal);
 
         let mut command = Command::new("codex");
         command
+            .arg("--ask-for-approval")
+            .arg("never")
             .arg("exec")
             .arg("--ephemeral")
+            .arg("--ignore-user-config")
+            .arg("--ignore-rules")
             .arg("--sandbox")
             .arg("read-only")
+            .arg("--config")
+            .arg("shell_environment_policy.inherit=none")
             .arg("--output-schema")
             .arg(&schema_path)
             .arg("--output-last-message")
@@ -138,13 +149,24 @@ impl ActionProvider for CodexProvider {
             command.arg("--model").arg(model);
         }
         command
-            .arg("--")
-            .arg(prompt)
+            .arg("-")
+            .current_dir(&work_dir)
+            .env_remove("DEEPSEEK_API_KEY")
+            .env_remove("OPENAI_API_KEY")
+            .env_remove("KUBECONFIG")
+            .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
 
-        let result = run_with_timeout(command, self.timeout, "Codex", &output_path);
+        let result = run_with_timeout(
+            command,
+            self.timeout,
+            "Codex",
+            &output_path,
+            prompt.as_bytes(),
+        );
         remove_temp_files(&[&output_path, &schema_path]);
+        let _ = fs::remove_dir(&work_dir);
         let output = result?;
         parse_action_json(&output)
     }
@@ -198,6 +220,9 @@ impl DeepSeekProvider {
             return Err(LlmError::InvalidConfiguration("DEEPSEEK_MODEL"));
         }
         if base_url.is_empty() {
+            return Err(LlmError::InvalidConfiguration("DEEPSEEK_BASE_URL"));
+        }
+        if !base_url.starts_with("https://") {
             return Err(LlmError::InvalidConfiguration("DEEPSEEK_BASE_URL"));
         }
         let endpoint = if base_url.ends_with("/chat/completions") {
@@ -421,8 +446,19 @@ fn unique_temp_path(prefix: &str, extension: &str) -> PathBuf {
 }
 
 fn write_new_file(path: &Path, contents: &[u8]) -> Result<(), LlmError> {
-    let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options.open(path)?;
     file.write_all(contents)?;
+    Ok(())
+}
+
+fn create_private_dir(path: &Path) -> Result<(), LlmError> {
+    fs::create_dir(path)?;
+    #[cfg(unix)]
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
     Ok(())
 }
 
@@ -437,11 +473,18 @@ fn run_with_timeout(
     timeout: Duration,
     provider: &'static str,
     output_path: &Path,
+    input: &[u8],
 ) -> Result<String, LlmError> {
     let mut child = command
         .spawn()
         .map_err(|_| LlmError::ProviderUnavailable(provider))?;
-    let started = SystemTime::now();
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or(LlmError::ProviderUnavailable(provider))?;
+    stdin.write_all(input)?;
+    drop(stdin);
+    let started = Instant::now();
     loop {
         if let Some(status) = child
             .try_wait()
@@ -453,7 +496,7 @@ fn run_with_timeout(
             return fs::read_to_string(output_path)
                 .map_err(|_| LlmError::InvalidResponse("provider output was unavailable"));
         }
-        if started.elapsed().is_ok_and(|elapsed| elapsed >= timeout) {
+        if started.elapsed() >= timeout {
             let _ = child.kill();
             let _ = child.wait();
             return Err(LlmError::Timeout);
@@ -503,6 +546,19 @@ mod tests {
         assert!(matches!(
             parse_deepseek_response(&response),
             Err(LlmError::InvalidResponse("expected one function call"))
+        ));
+    }
+
+    #[test]
+    fn deepseek_requires_tls_for_bearer_credentials() {
+        assert!(matches!(
+            DeepSeekProvider::new(
+                "secret",
+                "deepseek-chat",
+                "http://api.deepseek.example",
+                Duration::from_secs(1),
+            ),
+            Err(LlmError::InvalidConfiguration("DEEPSEEK_BASE_URL"))
         ));
     }
 }

@@ -41,9 +41,14 @@ Kubernetes fixtures.
 7. The adapter observes the resulting cluster state and records the decision,
    execution result, and postcondition status.
 
-The adapter is the only component with Kubernetes credentials. The LLM never
-receives ambient `kubectl` access, and the safety kernel never treats an LLM
-claim about execution as evidence.
+The Kubernetes adapter is the only component intentionally given an execution
+path. The DeepSeek model receives no Kubernetes credentials. The Codex
+subscription adapter starts a local agent in an isolated temporary working
+directory with an ephemeral session, ignored user configuration/rules, a read-only sandbox,
+and sensitive provider/Kubernetes environment variables removed. Codex CLI
+and its sandbox remain part of the trusted computing base; this path cannot be
+claimed equivalent to a tool-free API model. The safety kernel never treats an
+LLM claim about execution as evidence.
 
 The core invariant requires desired replicas to remain at least two and the
 target namespace to remain unchanged. Readiness is a precondition for restart
