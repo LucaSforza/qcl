@@ -10,84 +10,65 @@ use qcl::parser::{parse_formula, parse_model};
 const POLICY: &str = r"
 model {
   agents { operator_llm, human_operator, executor };
-  states { stable, degraded, restarted, deployed, deleted };
-  props { safe, production_modified, data_deleted };
+  states { ready, unready, image_changed, deleted };
+  props { safe, image_change, data_deleted };
   valuation {
-    stable: { safe };
-    degraded: { safe };
-    restarted: { safe };
-    deployed: { safe, production_modified };
+    ready: { safe };
+    unready: { safe };
+    image_changed: { safe, image_change };
     deleted: { data_deleted };
   };
   effectivity {
-    stable, {} -> { stable, degraded, restarted, deployed, deleted };
-    stable, { operator_llm } -> { stable, degraded, restarted, deployed, deleted };
-    stable, { human_operator } -> { stable, degraded, restarted, deployed, deleted };
-    stable, { executor } -> { stable, degraded, restarted, deployed, deleted };
-    stable, { operator_llm, human_operator } -> { stable, degraded, restarted, deployed, deleted };
-    stable, { operator_llm, executor } -> { stable, degraded, restarted, deployed, deleted };
-    stable, { human_operator, executor } -> { stable, degraded, restarted, deployed, deleted };
-    stable, { operator_llm, executor } -> { restarted };
-    stable, { operator_llm, human_operator, executor } -> { stable };
-    stable, { operator_llm, human_operator, executor } -> { degraded };
-    stable, { operator_llm, human_operator, executor } -> { restarted };
-    stable, { operator_llm, human_operator, executor } -> { deployed };
-    stable, { operator_llm, human_operator, executor } -> { deleted };
+    ready, {} -> { ready, unready, image_changed, deleted };
+    ready, { operator_llm } -> { ready, unready, image_changed, deleted };
+    ready, { human_operator } -> { ready, unready, image_changed, deleted };
+    ready, { executor } -> { ready, unready, image_changed, deleted };
+    ready, { operator_llm, human_operator } -> { ready, unready, image_changed, deleted };
+    ready, { operator_llm, executor } -> { ready, unready, image_changed, deleted };
+    ready, { human_operator, executor } -> { ready, unready, image_changed, deleted };
+    ready, { operator_llm, executor } -> { ready };
+    ready, { operator_llm, human_operator, executor } -> { ready };
+    ready, { operator_llm, human_operator, executor } -> { unready };
+    ready, { operator_llm, human_operator, executor } -> { image_changed };
+    ready, { operator_llm, human_operator, executor } -> { deleted };
 
-    degraded, {} -> { stable, degraded, restarted, deployed, deleted };
-    degraded, { operator_llm } -> { stable, degraded, restarted, deployed, deleted };
-    degraded, { human_operator } -> { stable, degraded, restarted, deployed, deleted };
-    degraded, { executor } -> { stable, degraded, restarted, deployed, deleted };
-    degraded, { operator_llm, human_operator } -> { stable, degraded, restarted, deployed, deleted };
-    degraded, { operator_llm, executor } -> { stable, degraded, restarted, deployed, deleted };
-    degraded, { human_operator, executor } -> { stable, degraded, restarted, deployed, deleted };
-    degraded, { operator_llm, executor } -> { restarted };
-    degraded, { operator_llm, human_operator, executor } -> { stable };
-    degraded, { operator_llm, human_operator, executor } -> { degraded };
-    degraded, { operator_llm, human_operator, executor } -> { restarted };
-    degraded, { operator_llm, human_operator, executor } -> { deployed };
-    degraded, { operator_llm, human_operator, executor } -> { deleted };
+    unready, {} -> { ready, unready, image_changed, deleted };
+    unready, { operator_llm } -> { ready, unready, image_changed, deleted };
+    unready, { human_operator } -> { ready, unready, image_changed, deleted };
+    unready, { executor } -> { ready, unready, image_changed, deleted };
+    unready, { operator_llm, human_operator } -> { ready, unready, image_changed, deleted };
+    unready, { operator_llm, executor } -> { ready, unready, image_changed, deleted };
+    unready, { human_operator, executor } -> { ready, unready, image_changed, deleted };
+    unready, { operator_llm, executor } -> { ready };
+    unready, { operator_llm, human_operator, executor } -> { ready };
+    unready, { operator_llm, human_operator, executor } -> { unready };
+    unready, { operator_llm, human_operator, executor } -> { image_changed };
+    unready, { operator_llm, human_operator, executor } -> { deleted };
 
-    restarted, {} -> { stable, degraded, restarted, deployed, deleted };
-    restarted, { operator_llm } -> { stable, degraded, restarted, deployed, deleted };
-    restarted, { human_operator } -> { stable, degraded, restarted, deployed, deleted };
-    restarted, { executor } -> { stable, degraded, restarted, deployed, deleted };
-    restarted, { operator_llm, human_operator } -> { stable, degraded, restarted, deployed, deleted };
-    restarted, { operator_llm, executor } -> { stable, degraded, restarted, deployed, deleted };
-    restarted, { human_operator, executor } -> { stable, degraded, restarted, deployed, deleted };
-    restarted, { operator_llm, executor } -> { restarted };
-    restarted, { operator_llm, human_operator, executor } -> { stable };
-    restarted, { operator_llm, human_operator, executor } -> { degraded };
-    restarted, { operator_llm, human_operator, executor } -> { restarted };
-    restarted, { operator_llm, human_operator, executor } -> { deployed };
-    restarted, { operator_llm, human_operator, executor } -> { deleted };
+    image_changed, {} -> { ready, unready, image_changed, deleted };
+    image_changed, { operator_llm } -> { ready, unready, image_changed, deleted };
+    image_changed, { human_operator } -> { ready, unready, image_changed, deleted };
+    image_changed, { executor } -> { ready, unready, image_changed, deleted };
+    image_changed, { operator_llm, human_operator } -> { ready, unready, image_changed, deleted };
+    image_changed, { operator_llm, executor } -> { ready, unready, image_changed, deleted };
+    image_changed, { human_operator, executor } -> { ready, unready, image_changed, deleted };
+    image_changed, { operator_llm, executor } -> { ready };
+    image_changed, { operator_llm, human_operator, executor } -> { ready };
+    image_changed, { operator_llm, human_operator, executor } -> { unready };
+    image_changed, { operator_llm, human_operator, executor } -> { image_changed };
+    image_changed, { operator_llm, human_operator, executor } -> { deleted };
 
-    deployed, {} -> { stable, degraded, restarted, deployed, deleted };
-    deployed, { operator_llm } -> { stable, degraded, restarted, deployed, deleted };
-    deployed, { human_operator } -> { stable, degraded, restarted, deployed, deleted };
-    deployed, { executor } -> { stable, degraded, restarted, deployed, deleted };
-    deployed, { operator_llm, human_operator } -> { stable, degraded, restarted, deployed, deleted };
-    deployed, { operator_llm, executor } -> { stable, degraded, restarted, deployed, deleted };
-    deployed, { human_operator, executor } -> { stable, degraded, restarted, deployed, deleted };
-    deployed, { operator_llm, executor } -> { restarted };
-    deployed, { operator_llm, human_operator, executor } -> { stable };
-    deployed, { operator_llm, human_operator, executor } -> { degraded };
-    deployed, { operator_llm, human_operator, executor } -> { restarted };
-    deployed, { operator_llm, human_operator, executor } -> { deployed };
-    deployed, { operator_llm, human_operator, executor } -> { deleted };
-
-    deleted, {} -> { stable, degraded, restarted, deployed, deleted };
-    deleted, { operator_llm } -> { stable, degraded, restarted, deployed, deleted };
-    deleted, { human_operator } -> { stable, degraded, restarted, deployed, deleted };
-    deleted, { executor } -> { stable, degraded, restarted, deployed, deleted };
-    deleted, { operator_llm, human_operator } -> { stable, degraded, restarted, deployed, deleted };
-    deleted, { operator_llm, executor } -> { stable, degraded, restarted, deployed, deleted };
-    deleted, { human_operator, executor } -> { stable, degraded, restarted, deployed, deleted };
-    deleted, { operator_llm, executor } -> { restarted };
-    deleted, { operator_llm, human_operator, executor } -> { stable };
-    deleted, { operator_llm, human_operator, executor } -> { degraded };
-    deleted, { operator_llm, human_operator, executor } -> { restarted };
-    deleted, { operator_llm, human_operator, executor } -> { deployed };
+    deleted, {} -> { ready, unready, image_changed, deleted };
+    deleted, { operator_llm } -> { ready, unready, image_changed, deleted };
+    deleted, { human_operator } -> { ready, unready, image_changed, deleted };
+    deleted, { executor } -> { ready, unready, image_changed, deleted };
+    deleted, { operator_llm, human_operator } -> { ready, unready, image_changed, deleted };
+    deleted, { operator_llm, executor } -> { ready, unready, image_changed, deleted };
+    deleted, { human_operator, executor } -> { ready, unready, image_changed, deleted };
+    deleted, { operator_llm, executor } -> { ready };
+    deleted, { operator_llm, human_operator, executor } -> { ready };
+    deleted, { operator_llm, human_operator, executor } -> { unready };
+    deleted, { operator_llm, human_operator, executor } -> { image_changed };
     deleted, { operator_llm, human_operator, executor } -> { deleted };
   };
 }
@@ -111,98 +92,198 @@ impl fmt::Display for Principal {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Tool {
-    InspectLogs,
-    RestartCanary,
-    DeployRelease,
-    DeleteResource,
+pub enum RolloutStrategy {
+    Rolling,
+    Recreate,
 }
 
-impl fmt::Display for Tool {
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Action {
+    Inspect,
+    RestartRollout { strategy: RolloutStrategy },
+    RollbackRollout,
+    Scale { replicas: u32 },
+    UpdateImage { image: String },
+    DeleteNamespace,
+}
+
+impl fmt::Display for Action {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::InspectLogs => "inspect_logs",
-            Self::RestartCanary => "restart_canary",
-            Self::DeployRelease => "deploy_release",
-            Self::DeleteResource => "delete_resource",
-        })
+        match self {
+            Self::Inspect => f.write_str("inspect"),
+            Self::RestartRollout { .. } => f.write_str("restart_rollout"),
+            Self::RollbackRollout => f.write_str("rollback_rollout"),
+            Self::Scale { replicas } => write!(f, "scale({replicas})"),
+            Self::UpdateImage { .. } => f.write_str("update_image"),
+            Self::DeleteNamespace => f.write_str("delete_namespace"),
+        }
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct DeploymentSnapshot {
+    namespace: String,
+    name: String,
+    resource_version: String,
+    desired_replicas: u32,
+    ready_replicas: u32,
+    image: String,
+}
+
+impl DeploymentSnapshot {
+    /// Validate and capture the fields read from one Kubernetes Deployment.
+    ///
+    /// # Errors
+    ///
+    /// Returns a validation error for empty identity fields, an empty image,
+    /// fewer than two desired replicas, or impossible readiness counts.
+    pub fn try_new(
+        namespace: impl Into<String>,
+        name: impl Into<String>,
+        resource_version: impl Into<String>,
+        desired_replicas: u32,
+        ready_replicas: u32,
+        image: impl Into<String>,
+    ) -> Result<Self, SnapshotError> {
+        let snapshot = Self {
+            namespace: namespace.into(),
+            name: name.into(),
+            resource_version: resource_version.into(),
+            desired_replicas,
+            ready_replicas,
+            image: image.into(),
+        };
+        snapshot.validate()?;
+        Ok(snapshot)
+    }
+
+    fn validate(&self) -> Result<(), SnapshotError> {
+        if self.namespace.is_empty() {
+            return Err(SnapshotError::EmptyNamespace);
+        }
+        if self.name.is_empty() {
+            return Err(SnapshotError::EmptyName);
+        }
+        if self.resource_version.is_empty() {
+            return Err(SnapshotError::EmptyResourceVersion);
+        }
+        if self.image.is_empty() {
+            return Err(SnapshotError::EmptyImage);
+        }
+        if self.desired_replicas < 2 {
+            return Err(SnapshotError::DesiredReplicasTooLow {
+                actual: self.desired_replicas,
+                minimum: 2,
+            });
+        }
+        if self.ready_replicas > self.desired_replicas {
+            return Err(SnapshotError::ReadyReplicasExceedDesired {
+                ready: self.ready_replicas,
+                desired: self.desired_replicas,
+            });
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn namespace(&self) -> &str {
+        &self.namespace
+    }
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    #[must_use]
+    pub fn resource_version(&self) -> &str {
+        &self.resource_version
+    }
+    #[must_use]
+    pub const fn desired_replicas(&self) -> u32 {
+        self.desired_replicas
+    }
+    #[must_use]
+    pub const fn ready_replicas(&self) -> u32 {
+        self.ready_replicas
+    }
+    #[must_use]
+    pub fn image(&self) -> &str {
+        &self.image
+    }
+    #[must_use]
+    pub const fn is_ready(&self) -> bool {
+        self.ready_replicas == self.desired_replicas
+    }
+}
+
+impl fmt::Display for DeploymentSnapshot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}/{}@{}",
+            self.namespace, self.name, self.resource_version
+        )
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SnapshotError {
+    EmptyNamespace,
+    EmptyName,
+    EmptyResourceVersion,
+    EmptyImage,
+    DesiredReplicasTooLow { actual: u32, minimum: u32 },
+    ReadyReplicasExceedDesired { ready: u32, desired: u32 },
+}
+
+impl fmt::Display for SnapshotError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyNamespace => f.write_str("namespace is empty"),
+            Self::EmptyName => f.write_str("deployment name is empty"),
+            Self::EmptyResourceVersion => f.write_str("resourceVersion is empty"),
+            Self::EmptyImage => f.write_str("image is empty"),
+            Self::DesiredReplicasTooLow { actual, minimum } => {
+                write!(f, "desired replicas {actual} is below minimum {minimum}")
+            }
+            Self::ReadyReplicasExceedDesired { ready, desired } => {
+                write!(
+                    f,
+                    "ready replicas {ready} exceeds desired replicas {desired}"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for SnapshotError {}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ToolIntent {
     actor: Principal,
-    tool: Tool,
-    snapshot_version: u64,
+    action: Action,
+    snapshot: DeploymentSnapshot,
 }
 
 impl ToolIntent {
     #[must_use]
-    pub const fn new(actor: Principal, tool: Tool, snapshot_version: u64) -> Self {
+    pub fn new(actor: Principal, action: Action, snapshot: DeploymentSnapshot) -> Self {
         Self {
             actor,
-            tool,
-            snapshot_version,
+            action,
+            snapshot,
         }
     }
-
     #[must_use]
-    pub const fn actor(self) -> Principal {
+    pub const fn actor(&self) -> Principal {
         self.actor
     }
-
     #[must_use]
-    pub const fn tool(self) -> Tool {
-        self.tool
+    pub fn action(&self) -> &Action {
+        &self.action
     }
-
     #[must_use]
-    pub const fn snapshot_version(self) -> u64 {
-        self.snapshot_version
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum SystemState {
-    Stable,
-    Degraded,
-    CanaryRestarted,
-    ProductionModified,
-    DataDeleted,
-}
-
-impl fmt::Display for SystemState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Stable => "stable",
-            Self::Degraded => "degraded",
-            Self::CanaryRestarted => "restarted",
-            Self::ProductionModified => "deployed",
-            Self::DataDeleted => "deleted",
-        })
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct WorldState {
-    state: SystemState,
-    version: u64,
-}
-
-impl WorldState {
-    #[must_use]
-    pub const fn new(state: SystemState, version: u64) -> Self {
-        Self { state, version }
-    }
-
-    #[must_use]
-    pub const fn state(self) -> SystemState {
-        self.state
-    }
-
-    #[must_use]
-    pub const fn version(self) -> u64 {
-        self.version
+    pub fn snapshot(&self) -> &DeploymentSnapshot {
+        &self.snapshot
     }
 }
 
@@ -218,43 +299,31 @@ impl Approval {
             principal: Principal::HumanOperator,
         }
     }
-
-    #[must_use]
-    pub const fn principal(self) -> Principal {
-        self.principal
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Denial {
     UnauthorizedActor { actor: Principal },
-    VersionMismatch { expected: u64, actual: u64 },
-    Precondition { tool: Tool, state: SystemState },
-    PolicyRejected { tool: Tool, state: SystemState },
-    PolicyFailure { tool: Tool, message: String },
-    UnsafeOutcome { tool: Tool, state: SystemState },
+    MissingApproval { required: Principal },
+    Precondition { action: Action, reason: String },
+    PolicyRejected { action: Action },
+    PolicyFailure { action: Action, message: String },
+    UnsafeOutcome { action: Action },
 }
 
 impl fmt::Display for Denial {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnauthorizedActor { actor } => write!(f, "unauthorized actor {actor}"),
-            Self::VersionMismatch { expected, actual } => {
-                write!(
-                    f,
-                    "snapshot version {actual} does not match intent version {expected}"
-                )
+            Self::MissingApproval { required } => write!(f, "missing approval from {required}"),
+            Self::Precondition { action, reason } => {
+                write!(f, "{action} precondition failed: {reason}")
             }
-            Self::Precondition { tool, state } => write!(f, "{tool} is not valid in state {state}"),
-            Self::PolicyRejected { tool, state } => {
-                write!(f, "QCL policy rejects {tool} in state {state}")
+            Self::PolicyRejected { action } => write!(f, "QCL policy rejects {action}"),
+            Self::PolicyFailure { action, message } => {
+                write!(f, "QCL policy check failed for {action}: {message}")
             }
-            Self::PolicyFailure { tool, message } => {
-                write!(f, "QCL policy check failed for {tool}: {message}")
-            }
-            Self::UnsafeOutcome { tool, state } => {
-                write!(f, "{tool} declares unsafe outcome state {state}")
-            }
+            Self::UnsafeOutcome { action } => write!(f, "{action} has an unsafe possible outcome"),
         }
     }
 }
@@ -268,14 +337,33 @@ pub enum Decision {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecutionGrant {
     intent: ToolIntent,
-    snapshot: WorldState,
     grant_id: u64,
 }
 
 impl ExecutionGrant {
     #[must_use]
-    pub const fn intent(&self) -> ToolIntent {
-        self.intent
+    pub fn intent(&self) -> &ToolIntent {
+        &self.intent
+    }
+    #[must_use]
+    pub fn snapshot(&self) -> &DeploymentSnapshot {
+        self.intent.snapshot()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutionPermit {
+    intent: ToolIntent,
+}
+
+impl ExecutionPermit {
+    #[must_use]
+    pub fn action(&self) -> &Action {
+        self.intent.action()
+    }
+    #[must_use]
+    pub fn snapshot(&self) -> &DeploymentSnapshot {
+        self.intent.snapshot()
     }
 }
 
@@ -288,26 +376,26 @@ pub enum AuditEvent {
         allowed: bool,
         denial: Option<Denial>,
     },
-    Execution {
-        tool: Tool,
-        from: WorldState,
-        to: WorldState,
+    GrantConsumed {
+        action: Action,
+        snapshot: DeploymentSnapshot,
     },
-    ExecutionRejected {
-        tool: Tool,
-        at: WorldState,
+    GrantRejected {
+        action: Action,
+        snapshot: DeploymentSnapshot,
         error: SafeOpsError,
     },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SafeOpsError {
+    Snapshot(SnapshotError),
     PolicyParse(String),
     PolicyInvalid(String),
     PolicyFormula(String),
     StaleGrant {
-        expected: WorldState,
-        actual: WorldState,
+        expected: Box<DeploymentSnapshot>,
+        actual: Box<DeploymentSnapshot>,
     },
     ReplayedGrant {
         grant_id: u64,
@@ -317,15 +405,12 @@ pub enum SafeOpsError {
 impl fmt::Display for SafeOpsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Snapshot(error) => write!(f, "invalid snapshot: {error}"),
             Self::PolicyParse(error) => write!(f, "policy parse failed: {error}"),
             Self::PolicyInvalid(error) => write!(f, "policy validation failed: {error}"),
             Self::PolicyFormula(error) => write!(f, "policy formula failed: {error}"),
             Self::StaleGrant { expected, actual } => {
-                write!(
-                    f,
-                    "grant for {} version {} is stale at {} version {}",
-                    expected.state, expected.version, actual.state, actual.version
-                )
+                write!(f, "grant for {expected} is stale at {actual}")
             }
             Self::ReplayedGrant { grant_id } => write!(f, "grant {grant_id} was already used"),
         }
@@ -334,19 +419,25 @@ impl fmt::Display for SafeOpsError {
 
 impl std::error::Error for SafeOpsError {}
 
+impl From<SnapshotError> for SafeOpsError {
+    fn from(error: SnapshotError) -> Self {
+        Self::Snapshot(error)
+    }
+}
+
 pub struct SafetyKernel {
     model: QclModel,
     next_grant_id: u64,
+    used_grants: HashSet<u64>,
     audit: Vec<AuditEvent>,
 }
 
 impl SafetyKernel {
-    /// Construct a kernel after parsing and validating the embedded QCL policy.
+    /// Parse and validate the embedded coalition policy.
     ///
     /// # Errors
     ///
-    /// Returns a structured error if the embedded policy cannot be parsed or
-    /// fails QCL model validation.
+    /// Returns an error if the embedded model cannot be parsed or validated.
     pub fn new() -> Result<Self, SafeOpsError> {
         let model =
             parse_model(POLICY).map_err(|error| SafeOpsError::PolicyParse(error.to_string()))?;
@@ -355,6 +446,7 @@ impl SafetyKernel {
         Ok(Self {
             model,
             next_grant_id: 0,
+            used_grants: HashSet::new(),
             audit: Vec::new(),
         })
     }
@@ -364,14 +456,11 @@ impl SafetyKernel {
         &self.audit
     }
 
-    pub fn authorize(
-        &mut self,
-        intent: &ToolIntent,
-        snapshot: &WorldState,
-        approvals: &[Approval],
-    ) -> Decision {
-        self.audit.push(AuditEvent::Proposal { intent: *intent });
-        let decision = self.authorize_inner(intent, snapshot, approvals);
+    pub fn authorize(&mut self, intent: &ToolIntent, approvals: &[Approval]) -> Decision {
+        self.audit.push(AuditEvent::Proposal {
+            intent: intent.clone(),
+        });
+        let decision = self.authorize_inner(intent, approvals);
         self.audit.push(AuditEvent::Decision {
             allowed: matches!(decision, Decision::Allow(_)),
             denial: match &decision {
@@ -382,256 +471,212 @@ impl SafetyKernel {
         decision
     }
 
-    /// Execute a previously issued grant through the simulator and append an
-    /// execution event to the audit trail.
+    /// Consume a grant into a side-effect-free permit for a future Kubernetes adapter.
     ///
     /// # Errors
     ///
-    /// Returns a stale or replay error when the grant is no longer current.
-    pub fn execute(
+    /// Returns an error if the grant is stale or has already been consumed.
+    pub fn consume_grant(
         &mut self,
-        simulator: &mut Simulator,
         grant: ExecutionGrant,
-    ) -> Result<ExecutionReceipt, SafeOpsError> {
-        let tool = grant.intent.tool;
-        match simulator.execute(grant) {
-            Ok(receipt) => {
-                self.audit.push(AuditEvent::Execution {
-                    tool: receipt.tool,
-                    from: receipt.from,
-                    to: receipt.to,
-                });
-                Ok(receipt)
-            }
-            Err(error) => {
-                self.audit.push(AuditEvent::ExecutionRejected {
-                    tool,
-                    at: simulator.current(),
-                    error: error.clone(),
-                });
-                Err(error)
-            }
+        current: &DeploymentSnapshot,
+    ) -> Result<ExecutionPermit, SafeOpsError> {
+        let action = grant.intent.action.clone();
+        let expected = grant.intent.snapshot.clone();
+        if self.used_grants.contains(&grant.grant_id) {
+            let error = SafeOpsError::ReplayedGrant {
+                grant_id: grant.grant_id,
+            };
+            self.audit.push(AuditEvent::GrantRejected {
+                action,
+                snapshot: expected,
+                error: error.clone(),
+            });
+            return Err(error);
         }
+        if &expected != current {
+            let error = SafeOpsError::StaleGrant {
+                expected: Box::new(expected.clone()),
+                actual: Box::new(current.clone()),
+            };
+            self.audit.push(AuditEvent::GrantRejected {
+                action,
+                snapshot: expected,
+                error: error.clone(),
+            });
+            return Err(error);
+        }
+        self.used_grants.insert(grant.grant_id);
+        self.audit.push(AuditEvent::GrantConsumed {
+            action,
+            snapshot: expected,
+        });
+        Ok(ExecutionPermit {
+            intent: grant.intent,
+        })
     }
 
-    fn authorize_inner(
-        &mut self,
-        intent: &ToolIntent,
-        snapshot: &WorldState,
-        approvals: &[Approval],
-    ) -> Decision {
+    fn authorize_inner(&mut self, intent: &ToolIntent, approvals: &[Approval]) -> Decision {
         if intent.actor != Principal::OperatorLlm {
             return Decision::Deny(Denial::UnauthorizedActor {
                 actor: intent.actor,
             });
         }
-        if intent.snapshot_version != snapshot.version {
-            return Decision::Deny(Denial::VersionMismatch {
-                expected: intent.snapshot_version,
-                actual: snapshot.version,
-            });
-        }
-        if intent.tool == Tool::DeleteResource && snapshot.state == SystemState::DataDeleted {
+        if let Some(reason) = precondition_failure(&intent.action, &intent.snapshot) {
             return Decision::Deny(Denial::Precondition {
-                tool: intent.tool,
-                state: snapshot.state,
+                action: intent.action.clone(),
+                reason,
             });
         }
-        let coalition = match coalition_for(&self.model, intent.tool, approvals) {
+        if matches!(intent.action, Action::DeleteNamespace) {
+            return Decision::Deny(Denial::UnsafeOutcome {
+                action: intent.action.clone(),
+            });
+        }
+        if matches!(intent.action, Action::UpdateImage { .. })
+            && !approvals
+                .iter()
+                .any(|approval| approval.principal == Principal::HumanOperator)
+        {
+            return Decision::Deny(Denial::MissingApproval {
+                required: Principal::HumanOperator,
+            });
+        }
+        let coalition = match self.coalition_for(&intent.action, approvals) {
             Ok(coalition) => coalition,
-            Err(error) => return policy_failure(intent.tool, error),
+            Err(error) => return policy_failure(&intent.action, error),
         };
-        match self.coalition_can_enforce(intent.tool, snapshot.state, &coalition) {
+        match self.coalition_can_enforce(&intent.action, &intent.snapshot, &coalition) {
             Ok(true) => {}
             Ok(false) => {
                 return Decision::Deny(Denial::PolicyRejected {
-                    tool: intent.tool,
-                    state: snapshot.state,
+                    action: intent.action.clone(),
                 });
             }
-            Err(error) => return policy_failure(intent.tool, error),
+            Err(error) => return policy_failure(&intent.action, error),
         }
-        match self.first_unsafe_outcome(intent.tool, snapshot.state) {
-            Ok(Some(state)) => {
-                return Decision::Deny(Denial::UnsafeOutcome {
-                    tool: intent.tool,
-                    state,
-                });
-            }
-            Ok(None) => {}
-            Err(error) => return policy_failure(intent.tool, error),
+        if let Err(error) = self.outcomes_are_safe(&intent.action) {
+            return policy_failure(&intent.action, error);
         }
-
         let grant = ExecutionGrant {
-            intent: *intent,
-            snapshot: *snapshot,
+            intent: intent.clone(),
             grant_id: self.next_grant_id,
         };
         self.next_grant_id = self.next_grant_id.saturating_add(1);
         Decision::Allow(grant)
     }
 
-    fn state_id(&self, state: SystemState) -> Result<StateId, SafeOpsError> {
-        self.model
-            .states
-            .lookup(&state.to_string())
-            .map_err(|error| SafeOpsError::PolicyFormula(error.to_string()))
-    }
-
-    fn formula_for(&self, tool: Tool) -> Result<Formula, SafeOpsError> {
-        let source = match tool {
-            Tool::InspectLogs | Tool::RestartCanary => "safe",
-            Tool::DeployRelease => "production_modified",
-            Tool::DeleteResource => "data_deleted",
+    fn coalition_for(
+        &self,
+        action: &Action,
+        approvals: &[Approval],
+    ) -> Result<Coalition, SafeOpsError> {
+        let agent = |principal: Principal| {
+            self.model
+                .agents
+                .lookup(&principal.to_string())
+                .map_err(|error| SafeOpsError::PolicyFormula(error.to_string()))
         };
-        parse_formula(source)
-            .map_err(|error| SafeOpsError::PolicyFormula(error.to_string()))?
-            .resolve(&self.model.agents, &self.model.atoms)
-            .map_err(|error| SafeOpsError::PolicyFormula(error.to_string()))
-    }
-
-    fn safe_formula(&self) -> Result<Formula, SafeOpsError> {
-        self.formula_for(Tool::RestartCanary)
+        let mut coalition =
+            Coalition::from_agents([agent(Principal::OperatorLlm)?, agent(Principal::Executor)?]);
+        if matches!(action, Action::UpdateImage { .. })
+            && approvals
+                .iter()
+                .any(|approval| approval.principal == Principal::HumanOperator)
+        {
+            coalition.insert(agent(Principal::HumanOperator)?);
+        }
+        Ok(coalition)
     }
 
     fn coalition_can_enforce(
         &self,
-        tool: Tool,
-        state: SystemState,
+        action: &Action,
+        snapshot: &DeploymentSnapshot,
         coalition: &Coalition,
     ) -> Result<bool, SafeOpsError> {
         let predicate = CoalitionPredicate::and(
             CoalitionPredicate::superset_eq(coalition.clone()),
             CoalitionPredicate::subset_eq(coalition.clone()),
         );
-        let policy = Formula::exists(predicate, self.formula_for(tool)?);
+        let formula = Formula::exists(predicate, self.formula_for(action)?);
         ModelChecker::new(&self.model)
-            .check(self.state_id(state)?, &policy)
+            .check(self.state_id(snapshot)?, &formula)
             .map_err(|error| SafeOpsError::PolicyFormula(error.to_string()))
     }
 
-    fn first_unsafe_outcome(
-        &self,
-        tool: Tool,
-        current: SystemState,
-    ) -> Result<Option<SystemState>, SafeOpsError> {
-        let safe = self.safe_formula()?;
+    fn outcomes_are_safe(&self, action: &Action) -> Result<(), SafeOpsError> {
+        let safe = self.parse_formula("safe")?;
         let checker = ModelChecker::new(&self.model);
-        for outcome in outcomes(tool, current) {
-            let is_safe = checker
-                .check(self.state_id(outcome)?, &safe)
+        let outcomes = if matches!(action, Action::UpdateImage { .. }) {
+            vec!["image_changed"]
+        } else {
+            vec!["ready", "unready"]
+        };
+        for outcome in outcomes {
+            let state = self
+                .model
+                .states
+                .lookup(outcome)
                 .map_err(|error| SafeOpsError::PolicyFormula(error.to_string()))?;
-            if !is_safe {
-                return Ok(Some(outcome));
+            if !checker
+                .check(state, &safe)
+                .map_err(|error| SafeOpsError::PolicyFormula(error.to_string()))?
+            {
+                return Err(SafeOpsError::PolicyFormula(format!(
+                    "unsafe outcome {outcome}"
+                )));
             }
         }
-        Ok(None)
-    }
-}
-
-fn policy_failure(tool: Tool, error: impl fmt::Display) -> Decision {
-    Decision::Deny(Denial::PolicyFailure {
-        tool,
-        message: error.to_string(),
-    })
-}
-
-fn coalition_for(
-    model: &QclModel,
-    tool: Tool,
-    approvals: &[Approval],
-) -> Result<Coalition, SafeOpsError> {
-    let agent = |principal: Principal| {
-        model
-            .agents
-            .lookup(&principal.to_string())
-            .map_err(|error| SafeOpsError::PolicyFormula(error.to_string()))
-    };
-    let mut coalition =
-        Coalition::from_agents([agent(Principal::OperatorLlm)?, agent(Principal::Executor)?]);
-    if matches!(tool, Tool::DeployRelease | Tool::DeleteResource)
-        && approvals
-            .iter()
-            .any(|approval| approval.principal == Principal::HumanOperator)
-    {
-        coalition.insert(agent(Principal::HumanOperator)?);
-    }
-    Ok(coalition)
-}
-
-fn outcomes(tool: Tool, current: SystemState) -> impl Iterator<Item = SystemState> {
-    let list = match tool {
-        Tool::InspectLogs => vec![current],
-        Tool::RestartCanary => vec![SystemState::CanaryRestarted, SystemState::Degraded],
-        Tool::DeployRelease => vec![SystemState::ProductionModified, SystemState::Degraded],
-        Tool::DeleteResource => vec![SystemState::DataDeleted],
-    };
-    list.into_iter()
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ExecutionReceipt {
-    pub tool: Tool,
-    pub from: WorldState,
-    pub to: WorldState,
-}
-
-pub struct Simulator {
-    current: WorldState,
-    used_grants: HashSet<u64>,
-}
-
-impl Simulator {
-    #[must_use]
-    pub fn new(initial: WorldState) -> Self {
-        Self {
-            current: initial,
-            used_grants: HashSet::new(),
-        }
+        Ok(())
     }
 
-    #[must_use]
-    pub const fn current(&self) -> WorldState {
-        self.current
-    }
-
-    /// Execute a grant against the current simulated world state.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the grant is stale or has already been used.
-    #[allow(
-        clippy::needless_pass_by_value,
-        reason = "execution consumes the capability even though its fields are copyable"
-    )]
-    pub fn execute(&mut self, grant: ExecutionGrant) -> Result<ExecutionReceipt, SafeOpsError> {
-        let ExecutionGrant {
-            intent,
-            snapshot,
-            grant_id,
-        } = grant;
-        if self.used_grants.contains(&grant_id) {
-            return Err(SafeOpsError::ReplayedGrant { grant_id });
-        }
-        if snapshot != self.current {
-            return Err(SafeOpsError::StaleGrant {
-                expected: snapshot,
-                actual: self.current,
-            });
-        }
-        self.used_grants.insert(grant_id);
-        let from = self.current;
-        let next_state = match intent.tool {
-            Tool::InspectLogs => from.state,
-            Tool::RestartCanary => SystemState::CanaryRestarted,
-            Tool::DeployRelease => SystemState::ProductionModified,
-            Tool::DeleteResource => SystemState::DataDeleted,
-        };
-        self.current = WorldState::new(next_state, from.version.saturating_add(1));
-        Ok(ExecutionReceipt {
-            tool: intent.tool,
-            from,
-            to: self.current,
+    fn formula_for(&self, action: &Action) -> Result<Formula, SafeOpsError> {
+        self.parse_formula(if matches!(action, Action::UpdateImage { .. }) {
+            "image_change"
+        } else {
+            "safe"
         })
     }
+
+    fn parse_formula(&self, source: &str) -> Result<Formula, SafeOpsError> {
+        parse_formula(source)
+            .map_err(|error| SafeOpsError::PolicyFormula(error.to_string()))?
+            .resolve(&self.model.agents, &self.model.atoms)
+            .map_err(|error| SafeOpsError::PolicyFormula(error.to_string()))
+    }
+
+    fn state_id(&self, snapshot: &DeploymentSnapshot) -> Result<StateId, SafeOpsError> {
+        self.model
+            .states
+            .lookup(if snapshot.is_ready() {
+                "ready"
+            } else {
+                "unready"
+            })
+            .map_err(|error| SafeOpsError::PolicyFormula(error.to_string()))
+    }
+}
+
+fn precondition_failure(action: &Action, snapshot: &DeploymentSnapshot) -> Option<String> {
+    match action {
+        Action::RestartRollout { .. } if !snapshot.is_ready() => {
+            Some("deployment is not ready".to_owned())
+        }
+        Action::RestartRollout {
+            strategy: RolloutStrategy::Recreate,
+        } => Some("only rolling strategy is permitted".to_owned()),
+        Action::Scale { replicas } if *replicas < 2 => {
+            Some("desired replicas must remain at least 2".to_owned())
+        }
+        Action::UpdateImage { image } if image.is_empty() => Some("image is empty".to_owned()),
+        _ => None,
+    }
+}
+
+fn policy_failure(action: &Action, error: impl fmt::Display) -> Decision {
+    Decision::Deny(Denial::PolicyFailure {
+        action: action.clone(),
+        message: error.to_string(),
+    })
 }
