@@ -26,6 +26,23 @@ The scenario demonstrates policy decisions only: safe operations, a
 human-gated image update, and deletion blocked by an unsafe outcome. It does
 not claim that an operation was executed and prints no chain-of-thought.
 
+## Interactive timeline
+
+After applying the fixture and selecting a real provider, start the terminal:
+
+```bash
+SAFEOPS_LLM_PROVIDER=codex cargo run -p safeops-k8s -- interactive
+```
+
+Use `status`, `plan <goal>`, `approve`, `execute`, `discard`, `timeline`,
+`help`, and `quit`. `plan` reads the live Deployment and asks the selected
+real provider for one typed action; it never executes. `execute` is a separate
+human command and is the only interactive command allowed to consume a grant
+through the bounded `kubectl` adapter. `approve` only retries an
+`update_image` proposal denied for missing human approval. Timeline output is
+numbered and redacts goals, images, provider reasoning, credentials, and API
+keys.
+
 The kernel models a `DeploymentSnapshot` (namespace, workload name, resource
 version, desired/ready replicas, and image) and typed actions such as inspect,
 restart, rollback, scale, image update, and namespace deletion. Grants bind to

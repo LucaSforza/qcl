@@ -1,9 +1,11 @@
 //! A side-effect-free Kubernetes `SafeOps` policy gateway built on QCL.
 
+mod interactive;
 mod kernel;
 mod kubernetes;
 mod llm;
 
+pub use interactive::{InteractiveError, run as run_interactive};
 pub use kernel::{
     Action, Approval, AuditEvent, Decision, Denial, DeploymentSnapshot, ExecutionGrant,
     ExecutionPermit, Principal, RolloutStrategy, SafeOpsError, SafetyKernel, SnapshotError,
