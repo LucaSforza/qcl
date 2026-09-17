@@ -27,10 +27,11 @@ Kubernetes fixtures.
 
 ## Runtime flow
 
-1. Codex CLI or DeepSeek proposes a typed `ToolIntent`.
-2. A Kubernetes snapshot reader records a `DeploymentSnapshot`: namespace,
+1. A Kubernetes snapshot reader records a `DeploymentSnapshot`: namespace,
    workload name, resource version, desired replicas, ready replicas, and
    image.
+2. Codex CLI or DeepSeek proposes a typed action from that snapshot and the
+   operator goal; the CLI wraps it in a `ToolIntent`.
 3. The safety kernel resolves the coalition and asks QCL whether that
    coalition can enforce the tool's target formula.
 4. The tool contract enumerates possible abstract outcomes. Every outcome must
@@ -64,39 +65,45 @@ read-only until the operator explicitly starts an execution cycle.
 
 Minimum commands:
 
-- `snapshot`: read and render the current allowlisted Deployment snapshot;
-- `run`: perform one bounded cycle through LLM proposal, typed parsing, QCL
+- `status`: read and render the current allowlisted Deployment snapshot;
+- `plan <goal>`: perform one bounded cycle through LLM proposal, typed parsing, QCL
   decision, and grant creation, without mutating Kubernetes;
-- `execute`: execute the current valid grant only after an explicit operator
-  confirmation, then read and render the post-snapshot;
+- `approve`: add human approval only to a pending image update previously
+  denied because that approval was missing;
+- `execute`: explicitly confirm execution of the current valid grant, then
+  read and render the post-snapshot;
+- `discard`: remove the current pending proposal or grant;
 - `timeline`: render the ordered events collected in the current session;
 - `help` and `quit`.
 
 `execute` must refuse when no current grant exists, when the grant is stale or
-already consumed, when confirmation is absent, or when any precondition fails.
+already consumed, or when any precondition fails. The separate `execute`
+command is the operator confirmation; planning can never execute implicitly.
+Starting another `plan` discards the previous pending grant before reading the
+cluster or contacting a provider.
 There is no command that accepts arbitrary shell text or arbitrary `kubectl`
 arguments. A non-interactive invocation may select the provider and timeout,
 but must preserve the same allowlist and confirmation boundary.
 
 ## Timeline event contract
 
-Each event has a monotonic sequence number, a local timestamp, a stage, a
-status, and a bounded human-readable summary. The renderer shows these fields
-plus safe typed metadata; it never prints raw prompts, raw provider responses,
+Each event has a monotonic sequence number, a stage, a status, and a bounded
+human-readable summary. Events appear live and remain available for replay.
+The renderer shows safe typed metadata; it never prints raw prompts, raw provider responses,
 HTTP headers, environment variables, kubeconfig contents, credentials, or
 model chain-of-thought.
 
 Expected stages for one cycle are:
 
-1. `snapshot.read` — snapshot obtained or rejected;
-2. `llm.request` — provider and timeout selected, without secret values;
+1. `snapshot` or `snapshot.read` — snapshot obtained or rejected;
+2. `llm.request` — provider request started, without prompt or secret values;
 3. `llm.proposal` — typed action parsed, or provider/parse failure;
 4. `qcl.decision` — allow/deny and compact policy reason;
-5. `grant.issued` or `grant.rejected` — snapshot-bound grant result;
-6. `kubectl.start` and `kubectl.result` — bounded adapter operation, only for
-   an explicitly confirmed execution;
-7. `snapshot.post` — observed postcondition, or observation failure;
-8. `cycle.failed` — terminal fail-closed outcome when any required stage fails.
+5. `grant` — snapshot-bound in-memory grant result;
+6. `human approval` — recorded only for approval-gated image changes;
+7. `execution` — started and completed/failed adapter operation, only after
+   the explicit `execute` command;
+8. `post-snapshot` or `snapshot.post` — observed postcondition or failure.
 
 Denied actions and errors remain visible in the timeline. They must be
 represented by typed status and redacted error summaries, not by printing
@@ -106,10 +113,11 @@ execution outcome.
 
 ## Interactive safety flow
 
-`run` follows this exact order: read snapshot → ask selected LLM for one typed
-intent → parse and validate intent → evaluate QCL contract → issue a
-snapshot-bound grant or deny. `execute` then re-reads the snapshot → verifies
-grant identity, scope, expiry, and snapshot equality → consumes grant once →
+`plan` follows this exact order: discard old pending grant → read snapshot →
+ask selected LLM for one typed intent → parse and validate intent →
+evaluate QCL contract → issue a snapshot-bound grant or deny. `execute` then
+re-reads the snapshot → verifies grant identity, scope, and snapshot equality →
+consumes grant once →
 invokes the restricted `kubectl` adapter → reads post-snapshot → records
 postcondition result. The LLM never receives a grant and never executes a
 Kubernetes command.
@@ -124,9 +132,9 @@ further mutation and a terminal `cycle.failed`/denied event. A successful
 
 The interactive showcase is complete only when all criteria hold:
 
-- a fresh session exposes exactly the minimum commands above and starts with
+- a fresh session exposes the minimum commands above and starts with
   no execution grant;
-- `run` renders ordered LLM → parse → QCL → grant events and performs no
+- `plan` renders ordered LLM → parse → QCL → grant events and performs no
   Kubernetes mutation;
 - `execute` requires explicit confirmation, executes only a valid current
   grant, and renders adapter plus post-snapshot events;

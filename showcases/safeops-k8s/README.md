@@ -40,8 +40,9 @@ real provider for one typed action; it never executes. `execute` is a separate
 human command and is the only interactive command allowed to consume a grant
 through the bounded `kubectl` adapter. `approve` only retries an
 `update_image` proposal denied for missing human approval. Timeline output is
-numbered and redacts goals, images, provider reasoning, credentials, and API
-keys.
+printed as each stage occurs, can be replayed with `timeline`, and redacts
+goals, images, provider reasoning, credentials, and API keys. Starting a new
+`plan` always discards any prior pending grant before external calls.
 
 The kernel models a `DeploymentSnapshot` (namespace, workload name, resource
 version, desired/ready replicas, and image) and typed actions such as inspect,

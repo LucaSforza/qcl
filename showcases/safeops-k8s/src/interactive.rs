@@ -6,6 +6,8 @@ use crate::{
     KubectlAdapter, SafeOpsError, SafetyKernel, ToolIntent,
 };
 
+const MAX_TIMELINE_EVENTS: usize = 256;
+
 /// Run the human-driven `SafeOps` terminal.
 ///
 /// The terminal never executes after `plan`: `execute` is an explicit second
@@ -42,15 +44,19 @@ pub fn run() -> Result<(), InteractiveError> {
                     state.record_snapshot(snapshot.clone());
                     println!("{}", render_snapshot(&snapshot));
                 }
-                Err(error) => print_error("status", &error),
+                Err(error) => {
+                    state.record(TimelineEvent::Failed {
+                        stage: "snapshot.read",
+                    });
+                    print_error("status", &error);
+                }
             },
             Ok(Command::Plan(goal)) => plan(&mut state, &mut kernel, &adapter, &goal),
             Ok(Command::Approve) => approve(&mut state, &mut kernel),
             Ok(Command::Execute) => execute(&mut state, &mut kernel, &adapter),
             Ok(Command::Discard) => {
                 if state.pending.take().is_some() {
-                    state.events.push(TimelineEvent::Discarded);
-                    println!("pending proposal discarded");
+                    state.record(TimelineEvent::Discarded);
                 } else {
                     println!("no pending proposal");
                 }
@@ -68,18 +74,25 @@ fn plan(
     adapter: &KubectlAdapter,
     goal: &str,
 ) {
+    state.begin_plan();
     let snapshot = match adapter.snapshot() {
         Ok(snapshot) => snapshot,
         Err(error) => {
+            state.record(TimelineEvent::Failed {
+                stage: "snapshot.read",
+            });
             print_error("plan snapshot", &error);
             return;
         }
     };
-    state.pending = None;
     state.record_snapshot(snapshot.clone());
+    state.record(TimelineEvent::LlmRequest);
     let provider = match provider_from_env() {
         Ok(provider) => provider,
         Err(error) => {
+            state.record(TimelineEvent::Failed {
+                stage: "llm.request",
+            });
             print_error("plan provider", &error);
             return;
         }
@@ -87,21 +100,22 @@ fn plan(
     let action = match provider.propose_action(&snapshot, goal) {
         Ok(action) => action,
         Err(error) => {
+            state.record(TimelineEvent::Failed {
+                stage: "llm.proposal",
+            });
             print_error("plan provider", &error);
             return;
         }
     };
-    state.events.push(TimelineEvent::Proposal(action.clone()));
+    state.record(TimelineEvent::Proposal(action.clone()));
     let intent = ToolIntent::new(crate::Principal::OperatorLlm, action, snapshot);
     match kernel.authorize(&intent, &[]) {
         Decision::Allow(grant) => {
-            state.events.push(TimelineEvent::Decision {
+            state.record(TimelineEvent::Decision {
                 allowed: true,
                 denial: None,
             });
-            state
-                .events
-                .push(TimelineEvent::Grant(grant.intent().action().clone()));
+            state.record(TimelineEvent::Grant(grant.intent().action().clone()));
             state.pending = Some(PendingProposal {
                 intent,
                 grant: Some(grant),
@@ -110,7 +124,7 @@ fn plan(
         }
         Decision::Deny(denial) => {
             let approval_needed = matches!(denial, Denial::MissingApproval { .. });
-            state.events.push(TimelineEvent::Decision {
+            state.record(TimelineEvent::Decision {
                 allowed: false,
                 denial: Some(denial.clone()),
             });
@@ -131,30 +145,30 @@ fn plan(
 }
 
 fn approve(state: &mut InteractiveState, kernel: &mut SafetyKernel) {
-    let Some(pending) = state.pending.as_mut() else {
+    let Some(mut pending) = state.pending.take() else {
         println!("no approval-gated proposal");
         return;
     };
     if !matches!(pending.intent.action(), Action::UpdateImage { .. }) || pending.grant.is_some() {
+        state.pending = Some(pending);
         println!(
             "approval applies only to a pending update_image denied for missing human approval"
         );
         return;
     }
+    state.record(TimelineEvent::HumanApproval);
     match kernel.authorize(&pending.intent, &[Approval::human_operator()]) {
         Decision::Allow(grant) => {
-            state.events.push(TimelineEvent::Decision {
+            state.record(TimelineEvent::Decision {
                 allowed: true,
                 denial: None,
             });
-            state
-                .events
-                .push(TimelineEvent::Grant(grant.intent().action().clone()));
+            state.record(TimelineEvent::Grant(grant.intent().action().clone()));
             pending.grant = Some(grant);
             println!("human approval accepted; type `execute` to run it");
         }
         Decision::Deny(denial) => {
-            state.events.push(TimelineEvent::Decision {
+            state.record(TimelineEvent::Decision {
                 allowed: false,
                 denial: Some(denial.clone()),
             });
@@ -162,6 +176,7 @@ fn approve(state: &mut InteractiveState, kernel: &mut SafetyKernel) {
             println!("approval rejected: {}", render_denial(&denial));
         }
     }
+    state.pending = Some(pending);
 }
 
 fn execute(state: &mut InteractiveState, kernel: &mut SafetyKernel, adapter: &KubectlAdapter) {
@@ -175,24 +190,29 @@ fn execute(state: &mut InteractiveState, kernel: &mut SafetyKernel, adapter: &Ku
         return;
     };
     let action = grant.intent().action().clone();
+    state.record(TimelineEvent::ExecutionStarted {
+        action: action.clone(),
+    });
     match adapter.execute(kernel, grant) {
         Ok(result) => {
-            state.events.push(TimelineEvent::Execution { action });
+            state.record(TimelineEvent::ExecutionCompleted { action });
             let snapshot = match result {
                 ExecutionResult::Observed(snapshot) => snapshot,
                 ExecutionResult::Mutated { after, .. } => after,
             };
-            state
-                .events
-                .push(TimelineEvent::PostSnapshot(snapshot.clone()));
+            state.record(TimelineEvent::PostSnapshot(snapshot.clone()));
             println!("execution completed; {}", render_snapshot(&snapshot));
         }
         Err(error) => {
-            state.events.push(TimelineEvent::ExecutionFailed { action });
+            state.record(TimelineEvent::ExecutionFailed { action });
             println!("execution failed: {error}");
             // A grant is consumed before adapter side effects. Never restore it.
             if let Ok(snapshot) = adapter.snapshot() {
-                state.events.push(TimelineEvent::PostSnapshot(snapshot));
+                state.record(TimelineEvent::PostSnapshot(snapshot));
+            } else {
+                state.record(TimelineEvent::Failed {
+                    stage: "snapshot.post",
+                });
             }
         }
     }
@@ -203,8 +223,9 @@ fn print_timeline(state: &InteractiveState) {
         println!("timeline empty");
         return;
     }
-    for (index, event) in state.events.iter().enumerate() {
-        println!("{}. {}", index + 1, event.render());
+    let first_sequence = state.next_sequence - state.events.len() as u64 + 1;
+    for (offset, event) in state.events.iter().enumerate() {
+        println!("{}. {}", first_sequence + offset as u64, event.render());
     }
 }
 
@@ -271,6 +292,7 @@ fn parse_command(line: &str) -> Result<Command, ParseError> {
 struct InteractiveState {
     pending: Option<PendingProposal>,
     events: Vec<TimelineEvent>,
+    next_sequence: u64,
 }
 
 struct PendingProposal {
@@ -279,27 +301,51 @@ struct PendingProposal {
 }
 
 impl InteractiveState {
+    fn begin_plan(&mut self) {
+        if self.pending.take().is_some() {
+            self.record(TimelineEvent::Discarded);
+        }
+    }
+
+    fn record(&mut self, event: TimelineEvent) {
+        let rendered = event.render();
+        self.next_sequence = self.next_sequence.saturating_add(1);
+        if self.events.len() == MAX_TIMELINE_EVENTS {
+            self.events.remove(0);
+        }
+        self.events.push(event);
+        println!("[{}] {rendered}", self.next_sequence);
+    }
+
     fn record_snapshot(&mut self, snapshot: DeploymentSnapshot) {
-        self.events.push(TimelineEvent::Snapshot(snapshot));
+        self.record(TimelineEvent::Snapshot(snapshot));
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum TimelineEvent {
     Snapshot(DeploymentSnapshot),
+    LlmRequest,
     Proposal(Action),
     Decision {
         allowed: bool,
         denial: Option<Denial>,
     },
     Grant(Action),
-    Execution {
+    HumanApproval,
+    ExecutionStarted {
+        action: Action,
+    },
+    ExecutionCompleted {
         action: Action,
     },
     ExecutionFailed {
         action: Action,
     },
     PostSnapshot(DeploymentSnapshot),
+    Failed {
+        stage: &'static str,
+    },
     Discarded,
 }
 
@@ -307,6 +353,7 @@ impl TimelineEvent {
     fn render(&self) -> String {
         match self {
             Self::Snapshot(snapshot) => format!("snapshot: {}", render_snapshot(snapshot)),
+            Self::LlmRequest => "llm request: started (goal=<redacted>)".to_owned(),
             Self::Proposal(action) => format!("typed proposal: {}", render_action(action)),
             Self::Decision { allowed: true, .. } => "decision: ALLOW".to_owned(),
             Self::Decision {
@@ -319,11 +366,18 @@ impl TimelineEvent {
                     .map_or("unknown denial".to_owned(), render_denial)
             ),
             Self::Grant(action) => format!("grant: {} (in memory)", render_action(action)),
-            Self::Execution { action } => format!("execution: {}", render_action(action)),
+            Self::HumanApproval => "human approval: recorded".to_owned(),
+            Self::ExecutionStarted { action } => {
+                format!("execution: STARTED ({})", render_action(action))
+            }
+            Self::ExecutionCompleted { action } => {
+                format!("execution: COMPLETED ({})", render_action(action))
+            }
             Self::ExecutionFailed { action } => {
                 format!("execution: FAILED ({})", render_action(action))
             }
             Self::PostSnapshot(snapshot) => format!("post-snapshot: {}", render_snapshot(snapshot)),
+            Self::Failed { stage } => format!("{stage}: FAILED (closed)"),
             Self::Discarded => "proposal discarded".to_owned(),
         }
     }
@@ -444,16 +498,46 @@ mod tests {
     }
 
     #[test]
+    fn new_plan_discards_previous_pending_grant_before_external_calls() {
+        let mut state = InteractiveState::default();
+        let intent = ToolIntent::new(crate::Principal::OperatorLlm, Action::Inspect, snapshot());
+        state.pending = Some(PendingProposal {
+            intent,
+            grant: None,
+        });
+
+        state.begin_plan();
+
+        assert!(state.pending.is_none());
+        assert_eq!(state.events, [TimelineEvent::Discarded]);
+    }
+
+    #[test]
+    fn timeline_is_bounded_without_reusing_sequence_numbers() {
+        let mut state = InteractiveState::default();
+        for _ in 0..=MAX_TIMELINE_EVENTS {
+            state.record(TimelineEvent::Discarded);
+        }
+
+        assert_eq!(state.events.len(), MAX_TIMELINE_EVENTS);
+        assert_eq!(state.next_sequence, MAX_TIMELINE_EVENTS as u64 + 1);
+    }
+
+    #[test]
     fn timeline_has_required_phase_labels() {
         let events = [
             TimelineEvent::Snapshot(snapshot()),
+            TimelineEvent::LlmRequest,
             TimelineEvent::Proposal(Action::Inspect),
             TimelineEvent::Decision {
                 allowed: true,
                 denial: None,
             },
             TimelineEvent::Grant(Action::Inspect),
-            TimelineEvent::Execution {
+            TimelineEvent::ExecutionStarted {
+                action: Action::Inspect,
+            },
+            TimelineEvent::ExecutionCompleted {
                 action: Action::Inspect,
             },
             TimelineEvent::PostSnapshot(snapshot()),
@@ -464,10 +548,12 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(output.contains("snapshot:"));
+        assert!(output.contains("llm request:"));
         assert!(output.contains("typed proposal:"));
         assert!(output.contains("decision:"));
         assert!(output.contains("grant:"));
-        assert!(output.contains("execution:"));
+        assert!(output.contains("execution: STARTED"));
+        assert!(output.contains("execution: COMPLETED"));
         assert!(output.contains("post-snapshot:"));
     }
 }
