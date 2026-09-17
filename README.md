@@ -79,12 +79,12 @@ implementation status, testing strategy, and language decisions.
 
 ## Optional SafeOps showcase
 
-The workspace also contains an unpublished `qcl-safeops` package. It is a
-separate local simulator demonstrating QCL-backed tool-call authorization; it
-is not included in the published `qcl` package.
+The workspace also contains an unpublished `safeops-k8s` package. It is a
+separate local SafeOps showcase for a kind Kubernetes cluster and QCL-backed
+tool-call authorization; it is not included in the published `qcl` package.
 
 ```bash
-cargo run -p qcl-safeops
+cargo run -p safeops-k8s
 ```
 
 ## License

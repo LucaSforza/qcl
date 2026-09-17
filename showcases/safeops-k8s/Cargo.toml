@@ -1,9 +1,9 @@
 [package]
-name = "qcl-safeops"
+name = "safeops-k8s"
 version = "0.1.0"
 edition = "2024"
 license = "AGPL-3.0-only"
-description = "Local SafeOps showcase built on QCL"
+description = "Local Kubernetes SafeOps showcase built on QCL"
 publish = false
 
 [dependencies]

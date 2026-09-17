@@ -1,8 +1,8 @@
 fn main() {
-    match qcl_safeops::run_demo() {
+    match safeops_k8s::run_demo() {
         Ok(output) => println!("{output}"),
         Err(error) => {
-            eprintln!("qcl-safeops demo failed: {error}");
+            eprintln!("safeops-k8s demo failed: {error}");
             std::process::exit(1);
         }
     }

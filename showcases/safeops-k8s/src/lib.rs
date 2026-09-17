@@ -8,7 +8,7 @@ pub use kernel::{
 };
 
 /// Returns the package name used by the showcase.
-pub const PACKAGE_NAME: &str = "qcl-safeops";
+pub const PACKAGE_NAME: &str = "safeops-k8s";
 
 /// Run the deterministic local scenario used by the `SafeOps` showcase.
 ///

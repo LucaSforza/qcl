@@ -15,7 +15,7 @@ include = [
 ]
 
 [workspace]
-members = ["packages/qcl-safeops"]
+members = ["showcases/safeops-k8s"]
 default-members = ["."]
 
 [dependencies]

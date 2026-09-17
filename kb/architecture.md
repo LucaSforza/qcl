@@ -62,16 +62,17 @@ but the published `qcl` package remains the domain-neutral model checker and
 REPL. Companion applications must not add LLM, tool-execution, approval, or
 credential concepts to the core crate.
 
-`qcl-safeops` is an optional, unpublished showcase package. It translates
-typed tool intents into QCL coalition checks and separately verifies that every
-declared tool outcome satisfies a safety invariant. It owns its simulator,
-tool contracts, grants, audit records, and command-line demonstration. The
+`safeops-k8s` is an optional, unpublished showcase package. It translates typed
+tool intents into QCL coalition checks and separately verifies that every
+declared tool outcome satisfies a safety invariant before a Kubernetes adapter
+can execute a snapshot-bound grant. It owns the adapter boundary, tool
+contracts, grants, audit records, local scenario, and Kubernetes fixtures. The
 core crate owns parsing, validation, model checking, and inference only.
 
 The workspace and release boundary are distinct: a source checkout may contain
 both packages, while `cargo install qcl` and the packaged `qcl` crate must not
-contain or build the showcase. See [`safeops.md`](safeops.md) for the complete
-contract.
+contain or build the showcase. See the [SafeOps Kubernetes contract](../showcases/safeops-k8s/kb/safeops.md)
+for the complete contract.
 
 ## Runtime and native boundary
 

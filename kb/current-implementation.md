@@ -2,8 +2,8 @@
 
 ## Delivered capabilities
 
-The workspace also includes an optional, unpublished `qcl-safeops` package. It
-currently delivers a deterministic local showcase with:
+The workspace also includes an optional, unpublished `safeops-k8s` package. It
+currently delivers a deterministic local kernel showcase with:
 
 - typed tool intents, approvals, execution grants, and structured denials;
 - QCL coalition checks plus an all-outcomes safety check before granting;
@@ -11,12 +11,17 @@ currently delivers a deterministic local showcase with:
   replayed;
 - proposal, decision, and execution audit events;
 - a stable CLI scenario covering restart, stale-grant rejection, human-gated
-  deployment, unsafe deletion, and an audit summary.
+  deployment, unsafe deletion, and an audit summary;
+- declarative kind/Kubernetes fixtures for a demo namespace, two-replica
+  Deployment/Service, least-privilege executor RBAC, and a native
+  `ValidatingAdmissionPolicy` requiring at least two replicas.
 
-The showcase is a local simulator only: it does not call a real LLM or tools,
-provide credential isolation, use cryptographic signatures, persist audits, or
-coordinate distributed execution. It remains outside the published `qcl`
-package even though both packages live in this Cargo workspace.
+The Kubernetes and LLM integration boundary is documented but not yet shipped:
+Codex CLI and DeepSeek adapters, restricted `kubectl` execution, opt-in live
+kind tests, credential isolation, cryptographic signatures, durable audits,
+and distributed coordination remain future work. The showcase remains outside
+the published `qcl` package even though both packages live in this Cargo
+workspace.
 
 The `qcl` crate currently provides:
 
