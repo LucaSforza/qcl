@@ -87,6 +87,18 @@ tool-call authorization; it is not included in the published `qcl` package.
 cargo run -p safeops-k8s
 ```
 
+## Optional AI-containment showcase
+
+`ai-containment` is a separate, offline executable abstraction of containment
+components. Its deterministic transition function is the source of truth:
+effectivity is derived by enumerating coalition strategies and outsider action
+profiles, then checked with QCL. It is not analysis of a live cloud cluster.
+
+```bash
+cargo run -p ai-containment -- audit --scenario hardened
+cargo run -p ai-containment -- audit --scenario shared-service-bypass
+```
+
 ## License
 
 QCL is distributed under the GNU Affero General Public License, version 3.

@@ -74,6 +74,14 @@ both packages, while `cargo install qcl` and the packaged `qcl` crate must not
 contain or build the showcase. See the [SafeOps Kubernetes contract](../showcases/safeops-k8s/kb/safeops.md)
 for the complete contract.
 
+`ai-containment` is a separate, unpublished offline showcase for an executable
+finite concurrent game form. Its `ContainmentSystem::transition` is the sole
+operational semantics; a domain-neutral `game_form` module enumerates coalition
+action choices and outsider completions to derive QCL effectivity antichains.
+The showcase owns containment agents, actions, states, valuations, CLI rendering,
+and strategy explanations. Core owns only typed finite game-form mechanics and
+contains no containment, LLM, credential, or cloud concepts.
+
 ## Runtime and native boundary
 
 `Repl` and its command dispatcher contain no terminal dependency and remain

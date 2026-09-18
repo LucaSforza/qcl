@@ -39,6 +39,13 @@ The `qcl` crate currently provides:
 - a testable command dispatcher and an interactive linenoise front end;
 - generated Rust API documentation and executable REPL tutorial.
 
+It also provides a domain-neutral finite concurrent game-form adapter. Given
+state-indexed available actions and one deterministic transition function, it
+derives minimal effectivity outcomes by enumerating coalition strategies and all
+outsider completions, retaining strategy witnesses for presentation. The optional
+`ai-containment` companion uses this adapter for an offline abstract containment
+audit; it does not inspect or certify live infrastructure.
+
 Global QCL validity, global satisfiability, complete proof search, Reactive
 Modules Language, BDDs, and action/strategy game structures are not
 implemented.
