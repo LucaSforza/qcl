@@ -2,11 +2,13 @@ use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
 
+use qcl::ast::{CoalitionPredicate, Formula};
 use qcl::checker::ModelChecker;
 use qcl::domain::{AgentId, Coalition, StateId, StateSet};
 use qcl::game_form::{self, FiniteGameForm, JointActionProfile};
 use qcl::model::QclModel;
 use qcl::parser::parse_formula;
+use qcl::predicate::PredicateProgram;
 use qcl::symbols::SymbolTable;
 
 /// Components whose actions form the finite concurrent system.
@@ -585,40 +587,185 @@ fn format_audit(report: &AuditReport, derived: &DerivedModel) -> String {
         lines.push("explanation: channel is cumulative; Internet possibility does not imply coalition enforceability".to_owned());
     }
     for check in report.checks.iter().filter(|check| !check.passed) {
-        lines.extend(format_counterexample(check.formula, derived));
+        lines.extend(format_counterexample(
+            check.formula,
+            &ContainmentSystem::new(report.scenario),
+            derived,
+        ));
     }
     lines.join("\n")
 }
 
-fn format_counterexample(formula: &str, derived: &DerivedModel) -> Vec<String> {
-    let coalition = if formula.contains("includes(safety_monitor)") {
-        Coalition::from_agents([
-            Agent::AgentA.id(),
-            Agent::AgentB.id(),
-            Agent::SharedService.id(),
-            Agent::SafetyMonitor.id(),
-        ])
-    } else {
-        Coalition::from_agents([
-            Agent::AgentA.id(),
-            Agent::AgentB.id(),
-            Agent::SharedService.id(),
-        ])
+/// Format a semantic counterexample for one failed audit formula.
+///
+/// The two modality cases intentionally have separate implementations. A
+/// failed `!<P> phi` needs a positive existential witness; a failed `[P] phi`
+/// needs a predicate-matching coalition for which *every* strategy has a bad
+/// outsider response. In particular, an offensive witness is not enough to
+/// refute a universal modality.
+fn format_counterexample(
+    source: &str,
+    system: &ContainmentSystem,
+    derived: &DerivedModel,
+) -> Vec<String> {
+    let Some(formula) = resolve_audit_formula(source, &derived.model) else {
+        return vec![format!(
+            "counterexample for {source}: formula could not be resolved"
+        )];
     };
-    let target = StateSet::singleton(ContainmentState::ExternalCompromise.id());
-    let Some(witness) = derived
-        .derived
-        .witness_for(ContainmentState::Start, &coalition, &target)
-    else {
-        return vec![format!("counterexample for {formula}: no witness found")];
+    match formula {
+        Formula::Forall { predicate, formula } => {
+            format_universal_counterexample(source, &predicate, &formula, system, derived)
+        }
+        Formula::Not(child) => match *child {
+            Formula::Exists { predicate, formula } => {
+                format_negated_existential_counterexample(source, &predicate, &formula, derived)
+            }
+            _ => vec![format!("counterexample for {source}: unsupported negation")],
+        },
+        _ => vec![format!("counterexample for {source}: unsupported modality")],
+    }
+}
+
+fn resolve_audit_formula(source: &str, model: &QclModel) -> Option<Formula> {
+    parse_formula(source)
+        .ok()?
+        .resolve(&model.agents, &model.atoms)
+        .ok()
+}
+
+fn predicate_matches(predicate: &CoalitionPredicate, coalition: &Coalition) -> bool {
+    PredicateProgram::compile(predicate).evaluate(coalition)
+}
+
+fn format_negated_existential_counterexample(
+    source: &str,
+    predicate: &CoalitionPredicate,
+    target_formula: &Formula,
+    derived: &DerivedModel,
+) -> Vec<String> {
+    let checker = ModelChecker::new(&derived.model);
+    let Some(target) = checker.satisfying_states(target_formula).ok() else {
+        return vec![format!(
+            "counterexample for {source}: target could not be evaluated"
+        )];
     };
-    vec![
-        format!("counterexample for {formula}"),
-        format!("coalition: {}", format_coalition(&coalition)),
-        format!("strategy: {}", format_actions(witness.strategy.iter())),
-        format!("possible outcomes: {}", format_states(&witness.outcomes)),
-        "explanation: fixed coalition actions force external_compromise against every outsider completion".to_owned(),
-    ]
+    let mut coalitions: Vec<_> = Coalition::all(Agent::ALL.len())
+        .filter(|coalition| predicate_matches(predicate, coalition))
+        .collect();
+    coalitions.sort_by_key(|coalition| (coalition.len(), coalition.iter().collect::<Vec<_>>()));
+    for coalition in coalitions {
+        if let Some(witness) =
+            derived
+                .derived
+                .witness_for(ContainmentState::Start, &coalition, &target)
+        {
+            return vec![
+                format!("counterexample for {source}"),
+                "positive existential witness (the negated existential is false)".to_owned(),
+                format!("coalition: {}", format_coalition(&coalition)),
+                format!("strategy: {}", format_actions(witness.strategy.iter())),
+                format!("possible outcomes: {}", format_states(&witness.outcomes)),
+                "explanation: every possible outcome satisfies the target formula".to_owned(),
+            ];
+        }
+    }
+    vec![format!(
+        "counterexample for {source}: no existential witness found"
+    )]
+}
+
+fn format_universal_counterexample(
+    source: &str,
+    predicate: &CoalitionPredicate,
+    target_formula: &Formula,
+    system: &ContainmentSystem,
+    derived: &DerivedModel,
+) -> Vec<String> {
+    let checker = ModelChecker::new(&derived.model);
+    let Some(target) = checker.satisfying_states(target_formula).ok() else {
+        return vec![format!(
+            "counterexample for {source}: target could not be evaluated"
+        )];
+    };
+    let profiles = system.all_joint_actions();
+    let mut coalitions: Vec<_> = Coalition::all(Agent::ALL.len())
+        .filter(|coalition| predicate_matches(predicate, coalition))
+        .collect();
+    coalitions.sort_by_key(|coalition| (coalition.len(), coalition.iter().collect::<Vec<_>>()));
+
+    for coalition in coalitions {
+        if derived.derived.effectivity().can_enforce(
+            ContainmentState::Start.id(),
+            &coalition,
+            &target,
+        ) {
+            continue;
+        }
+        let Some(strategies) = derived
+            .derived
+            .witnesses(ContainmentState::Start, &coalition)
+        else {
+            continue;
+        };
+        let Some(first_bad) = strategies.iter().find_map(|strategy| {
+            violating_profile(system, &profiles, &strategy.strategy, &target)
+                .map(|profile| (strategy, profile))
+        }) else {
+            continue;
+        };
+
+        // This check is deliberately against every enumerated strategy, not
+        // just the sample strategy rendered below. It is the definition of
+        // failure for the primitive universal modality.
+        if !strategies.iter().all(|strategy| {
+            violating_profile(system, &profiles, &strategy.strategy, &target).is_some()
+        }) {
+            continue;
+        }
+        let (strategy, profile) = first_bad;
+        return vec![
+            format!("counterexample for {source}"),
+            format!("counterexample coalition: {}", format_coalition(&coalition)),
+            "reason: this coalition satisfies the predicate but has no strategy that guarantees the target formula".to_owned(),
+            format!("coalition strategy: {}", format_actions(strategy.strategy.iter())),
+            format!(
+                "adversarial outsider response: {}",
+                format_outsider_actions(&profile, &coalition)
+            ),
+            format!(
+                "result: {}",
+                system.transition(ContainmentState::Start, &profile)
+            ),
+            "explanation: every available coalition strategy has some outsider response that violates the target formula".to_owned(),
+        ];
+    }
+    vec![format!(
+        "counterexample for {source}: no universal counterexample found"
+    )]
+}
+
+fn violating_profile(
+    system: &ContainmentSystem,
+    profiles: &[JointAction],
+    strategy: &game_form::CoalitionStrategy<Action>,
+    target: &StateSet,
+) -> Option<JointAction> {
+    profiles.iter().copied().find(|profile| {
+        strategy
+            .iter()
+            .all(|(agent, action)| profile.action(Agent::ALL[agent.index()]) == *action)
+            && !target.contains(system.transition(ContainmentState::Start, profile).id())
+    })
+}
+
+fn format_outsider_actions(profile: &JointAction, coalition: &Coalition) -> String {
+    Agent::ALL
+        .into_iter()
+        .filter(|agent| !coalition.contains(agent.id()))
+        .map(|agent| format!("{} = {}", agent, profile.action(agent)))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn format_coalition(coalition: &Coalition) -> String {
@@ -854,5 +1001,83 @@ mod tests {
         assert!(hardened.contains("PASS !<subset({agent_a, agent_b, shared_service})> internet"));
         assert!(bypass.contains("FAIL !<subset({agent_a, agent_b, shared_service})> internet"));
         assert!(bypass.contains("FAIL !<excludes(egress_gateway)> internet"));
+    }
+
+    #[test]
+    fn universal_failure_reports_coalition_without_defensive_strategy() {
+        let system = ContainmentSystem::new(Scenario::SharedServiceBypass);
+        let derived = system.qcl_model();
+        let source = "[includes(safety_monitor)] !compromised";
+        let formula = resolve_audit_formula(source, &derived.model).expect("audit formula");
+        let Formula::Forall { predicate, formula } = formula else {
+            panic!("expected universal modality");
+        };
+        let target = ModelChecker::new(&derived.model)
+            .satisfying_states(&formula)
+            .expect("target states");
+        let coalition = Coalition::singleton(Agent::SafetyMonitor.id());
+        assert!(predicate_matches(&predicate, &coalition));
+        assert!(!derived.derived.effectivity().can_enforce(
+            ContainmentState::Start.id(),
+            &coalition,
+            &target
+        ));
+
+        // Independent brute force check of the universal-failure condition:
+        // every monitor strategy has at least one bad outsider completion.
+        let profiles = system.all_joint_actions();
+        let strategies = brute_strategies(&profiles, &coalition);
+        assert!(!strategies.is_empty());
+        assert!(strategies.iter().all(|strategy| {
+            !all_outcomes(system, &profiles, ContainmentState::Start, strategy).is_subset(&target)
+        }));
+
+        let output =
+            format_universal_counterexample(source, &predicate, &formula, &system, &derived)
+                .join("\n");
+        assert!(output.contains("counterexample coalition: {safety_monitor}"));
+        assert!(output.contains("adversarial outsider response:"));
+        assert!(output.contains("result: external_compromise"));
+        assert!(output.contains("every available coalition strategy"));
+    }
+
+    #[test]
+    fn offensive_ability_does_not_imply_lack_of_defensive_ability() {
+        let system = ContainmentSystem::new(Scenario::SharedServiceBypass);
+        let derived = system.derive_effectivity();
+        let coalition = Coalition::from_agents([
+            Agent::AgentA.id(),
+            Agent::AgentB.id(),
+            Agent::SharedService.id(),
+        ]);
+        let compromised = StateSet::singleton(ContainmentState::ExternalCompromise.id());
+        let safe = StateSet::from_states(
+            ContainmentState::ALL
+                .into_iter()
+                .filter(|state| *state != ContainmentState::ExternalCompromise)
+                .map(ContainmentState::id),
+        );
+        assert!(derived.effectivity().can_enforce(
+            ContainmentState::Start.id(),
+            &coalition,
+            &compromised
+        ));
+        assert!(
+            derived
+                .effectivity()
+                .can_enforce(ContainmentState::Start.id(), &coalition, &safe)
+        );
+    }
+
+    #[test]
+    fn failed_negated_existential_reports_positive_enforcement_witness() {
+        let output = run_audit(Scenario::SharedServiceBypass);
+        let marker = "counterexample for !<excludes(safety_monitor)> compromised";
+        let start = output.find(marker).expect("failed negated existential");
+        let section = &output[start..];
+        assert!(section.contains("positive existential witness"));
+        assert!(section.contains("coalition: {agent_a, agent_b, shared_service}"));
+        assert!(section.contains("possible outcomes: {external_compromise}"));
+        assert!(section.contains("every possible outcome satisfies the target"));
     }
 }
