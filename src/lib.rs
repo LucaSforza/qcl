@@ -54,6 +54,8 @@ pub mod ast;
 pub mod checker;
 /// Typed identifiers and finite set wrappers used by resolved models.
 pub mod domain;
+/// Domain-neutral finite concurrent game forms and derived effectivity.
+pub mod game_form;
 pub mod inference;
 /// Explicit effectivity models and weak-playability validation.
 pub mod model;
