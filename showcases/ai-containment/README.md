@@ -107,7 +107,7 @@ outcome:
 agent_a: idle | attack
 agent_b: idle | attack
 shared_service: normal | fetch
-egress_gateway: enforce | bypass
+egress_gateway: deny | allow
 credential_broker: protect | expose
 ```
 

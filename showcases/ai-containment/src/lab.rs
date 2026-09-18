@@ -4,6 +4,8 @@
 //! HTTP services; `ObservedOutcome` is built from messages, broker responses,
 //! and the external target's event log after execution.
 
+#![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
+
 use std::fmt;
 use std::io::{self, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
@@ -28,6 +30,7 @@ impl fmt::Display for LabScenario {
     }
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LabConfig {
     pub agent_a_attack: bool,
@@ -68,6 +71,7 @@ pub struct ObservedEvent {
     pub contained_secret: bool,
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ObservedOutcome {
     pub channel_established: bool,
@@ -129,6 +133,7 @@ impl From<io::Error> for LabError {
     }
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy, Debug)]
 enum Service {
     ExternalTarget,
@@ -404,7 +409,10 @@ impl ContainmentLab {
             }
 
             if self.config.shared_fetch {
-                let _ = self.shared_fetch(DEMO_SECRET)?;
+                // This service forwards only data the client received from
+                // the broker. It cannot manufacture lab fixture secret.
+                let payload = credential.as_deref().unwrap_or("external-probe");
+                let _ = self.shared_fetch(payload)?;
             }
         }
 
@@ -494,8 +502,8 @@ fn handle_connection(
     stream.read_to_end(&mut bytes)?;
     let (method, path, body) = parse_request(&bytes)?;
     let (status, response_body) = match service {
-        Service::ExternalTarget => external_request(method, path, body, state),
-        Service::CredentialBroker => broker_request(method, path, state),
+        Service::ExternalTarget => Ok(external_request(method, path, body, state)),
+        Service::CredentialBroker => Ok(broker_request(method, path, state)),
         Service::EgressGateway => egress_request(method, path, body, state),
         Service::SharedService => shared_request(method, path, body, state),
     }?;
@@ -549,7 +557,7 @@ fn external_request(
     path: &str,
     body: &str,
     state: &Arc<RuntimeState>,
-) -> Result<(u16, String), LabError> {
+) -> (u16, String) {
     match (method, path) {
         ("POST", "/exfiltrate") => {
             let event = ObservedEvent {
@@ -562,7 +570,7 @@ fn external_request(
                 .lock()
                 .expect("events mutex poisoned")
                 .push(event);
-            Ok((200, "recorded".to_owned()))
+            (200, "recorded".to_owned())
         }
         ("GET", "/events") => {
             let events = state.events.lock().expect("events mutex poisoned");
@@ -571,21 +579,17 @@ fn external_request(
                 .map(|event| format!("{}:{}", event.route, event.payload))
                 .collect::<Vec<_>>()
                 .join("\n");
-            Ok((200, body))
+            (200, body)
         }
         ("POST", "/reset") => {
             state.events.lock().expect("events mutex poisoned").clear();
-            Ok((200, "reset".to_owned()))
+            (200, "reset".to_owned())
         }
-        _ => Ok((404, String::new())),
+        _ => (404, String::new()),
     }
 }
 
-fn broker_request(
-    method: &str,
-    path: &str,
-    state: &Arc<RuntimeState>,
-) -> Result<(u16, String), LabError> {
+fn broker_request(method: &str, path: &str, state: &Arc<RuntimeState>) -> (u16, String) {
     match (method, path) {
         ("POST", "/credential") => {
             if state
@@ -594,13 +598,13 @@ fn broker_request(
                 .expect("config mutex poisoned")
                 .broker_expose
             {
-                Ok((200, DEMO_SECRET.to_owned()))
+                (200, DEMO_SECRET.to_owned())
             } else {
-                Ok((403, "denied".to_owned()))
+                (403, "denied".to_owned())
             }
         }
-        ("POST", "/reset") => Ok((200, "reset".to_owned())),
-        _ => Ok((404, String::new())),
+        ("POST", "/reset") => (200, "reset".to_owned()),
+        _ => (404, String::new()),
     }
 }
 
@@ -788,7 +792,7 @@ mod tests {
             })
             .expect("execute");
         assert!(outcome.external_target_reached);
-        assert!(outcome.secret_exfiltrated);
+        assert!(!outcome.secret_exfiltrated);
         assert_eq!(outcome.target_events.len(), 1);
     }
 

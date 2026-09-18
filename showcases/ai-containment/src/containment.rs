@@ -1,3 +1,5 @@
+#![allow(clippy::trivially_copy_pass_by_ref)]
+
 use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
