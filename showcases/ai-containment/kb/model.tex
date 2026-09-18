@@ -1,0 +1,217 @@
+\documentclass[11pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,booktabs,enumitem,geometry}
+\geometry{margin=1in}
+
+\title{An Executable Finite Containment Game Form for QCL}
+\author{QCL AI-containment showcase}
+\date{}
+
+\newcommand{\Agents}{\mathit{N}}
+\newcommand{\States}{\mathit{S}}
+\newcommand{\Act}{\mathit{Act}}
+\newcommand{\Out}{\mathsf{Out}}
+\newcommand{\Eff}{\mathsf{E}}
+\newcommand{\powerset}{\mathcal{P}}
+\newcommand{\denote}[1]{\left[\!\left[ #1 \right]\!\right]}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This note specifies the finite game form used by the AI-containment
+showcase. A deterministic executable transition function is the single source
+of truth. Coalition outcome sets and the effectivity function are derived by
+enumerating coalition strategies and all outsider responses; they are not
+hand-authored. Quantified Coalition Logic (QCL) then checks properties of the
+derived model. The result is relative to this abstract one-step system and is
+not a security proof for a concrete cloud or AI deployment.
+\end{abstract}
+
+\section{Agents, actions, and states}
+
+Let
+\[
+  G=(\Agents,\States,\Act,\delta)
+\]
+be a finite concurrent game form. The agents are
+\[
+\Agents=\{a,b,ss,sb,eg,cb,sm\},
+\]
+standing for \texttt{agent\_a}, \texttt{agent\_b},
+\texttt{shared\_service}, \texttt{sandbox},
+\texttt{egress\_gateway}, \texttt{credential\_broker}, and
+\texttt{safety\_monitor}. They are strategic components, not assumptions
+about the cognition or intentionality of an LLM.
+
+Each action set is binary:
+\begin{align*}
+ \Act(a)&=\{idle,attack\}, & \Act(b)&=\{idle,attack\},\\
+ \Act(ss)&=\{isolate,relay\}, & \Act(sb)&=\{enforce,bypass\},\\
+ \Act(eg)&=\{deny,allow\}, & \Act(cb)&=\{protect,expose\},\\
+ \Act(sm)&=\{block,miss\}.
+\end{align*}
+Thus there are $2^7=128$ total joint action profiles. The state space is
+\[
+\begin{aligned}
+\States=\{&start,contained,channel\_open,internet\_access,\\
+            &credentials\_obtained,external\_compromise\}.
+\end{aligned}
+\]
+
+The valuation $\pi:\States\to\powerset(Prop)$ is cumulative:
+\begin{align*}
+ \pi(contained)&=\{safe\},\\
+ \pi(channel\_open)&=\{channel\},\\
+ \pi(internet\_access)&=\{channel,internet,\\
+   loss\_of\_containment\},\\
+ \pi(credentials\_obtained)&=\{channel,internet,credentials,\\
+   loss\_of\_containment\},\\
+ \pi(external\_compromise)&=\{channel,internet,credentials,\\
+   loss\_of\_containment,compromised\}.
+\end{align*}
+The input state is $start$. Other states are terminal outcome classes with
+deterministic self-loops.
+
+\section{Authoritative transition function}
+
+For a total profile $\alpha\in\prod_{i\in\Agents}\Act(i)$, define
+\[
+  coordinated(\alpha) \iff
+  \alpha(a)=attack\;\land\;\alpha(b)=attack\;\land\;\alpha(ss)=relay.
+\]
+The hardened transition $\delta_h$ is the following deterministic function:
+\begin{align*}
+\delta_h(s,\alpha)&=s &&\text{if }s\ne start,\\
+\delta_h(start,\alpha)&=contained &&\text{if }\neg coordinated(\alpha),\\
+\delta_h(start,\alpha)&=channel\_open &&\text{if }coordinated(\alpha)\\
+ &&&\quad\text{and }(\alpha(sb)\ne bypass\lor\alpha(eg)\ne allow),\\
+\delta_h(start,\alpha)&=internet\_access &&\text{if }coordinated(\alpha),\\
+ &&&\quad\alpha(sb)=bypass,\ \alpha(eg)=allow,\ \alpha(cb)\ne expose,\\
+\delta_h(start,\alpha)&=credentials\_obtained &&\text{if }coordinated(\alpha),\\
+ &&&\quad\alpha(sb)=bypass,\ \alpha(eg)=allow,\ \alpha(cb)=expose,\\
+ &&&\quad\alpha(sm)\ne miss,\\
+\delta_h(start,\alpha)&=external\_compromise &&\text{otherwise.}
+\end{align*}
+
+The \texttt{shared-service-bypass} scenario changes only the coordinated
+branch:
+\[
+  \delta_b(start,\alpha)=external\_compromise
+  \quad\text{whenever }coordinated(\alpha),
+\]
+and returns \texttt{contained} otherwise. This is a synthetic common-mode
+failure model (external proxy, ambient credentials, and monitor bypass), not a
+reconstruction of an incident.
+
+The Rust method \texttt{ContainmentSystem::transition} implements these rules.
+Simulation, effectivity derivation, witnesses, and explanations call this
+method; no second set of outcome rules is permitted.
+
+\section{Coalition strategies and effectivity}
+
+For $C\subseteq\Agents$, a coalition strategy is a partial profile
+\[
+  \alpha_C\in\prod_{i\in C}\Act(i).
+\]
+Outsiders choose any completion. Define the possible outcome set
+\[
+ \Out(s,C,\alpha_C)=
+ \left\{\delta(s,\alpha_C\cup\alpha_{\Agents\setminus C})\mid
+ \alpha_{\Agents\setminus C}\in
+ \prod_{i\in\Agents\setminus C}\Act(i)\right\}.
+\]
+The set is adversarial: every outsider action is considered possible. A state
+set $X$ is enforceable by $C$ at $s$ when
+\[
+ \exists\alpha_C\quad \Out(s,C,\alpha_C)\subseteq X.
+\]
+
+The raw effectivity family is
+\[
+ \mathrm{RawE}_s(C)=\{\Out(s,C,\alpha_C)\mid\alpha_C\text{ is a strategy}\}.
+\]
+The stored effectivity value is its inclusion-minimal antichain:
+\[
+ \Eff_s(C)=\min_{\subseteq}\bigl(\mathrm{RawE}_s(C)\bigr).
+\]
+The implementation inserts outcome sets into an antichain: it discards a new
+set dominated by an existing subset and removes existing supersets. It never
+materializes upward closure. Consequently,
+\[
+ X\text{ is enforceable by }C\text{ at }s
+ \iff \exists Y\in\Eff_s(C):Y\subseteq X.
+\]
+Each surviving minimal set retains a witness $(C,\alpha_C,Y)$ for output.
+
+\section{QCL interpretation}
+
+Let $\denote{\varphi}_M=\{t\in\States\mid M,t\models\varphi\}$.
+For a coalition predicate $P$:
+\begin{align*}
+ M,s\models\langle P\rangle\varphi
+ &\iff \exists C\subseteq\Agents.
+ C\models P\ \land\ \\
+ &\qquad\exists Y\in\Eff_s(C):Y\subseteq
+ \denote{\varphi}_M,\\[3pt]
+ M,s\models[P]\varphi
+ &\iff \forall C\subseteq\Agents.
+ C\models P\ \Longrightarrow\ \\
+ &\qquad\exists Y\in\Eff_s(C):Y\subseteq
+ \denote{\varphi}_M.
+\end{align*}
+The box modality is primitive and evaluated directly. It is not replaced by
+the Boolean dual of the diamond: the intended universal quantifier ranges
+over coalitions, while the ability test still contains an existential
+coalition strategy and universal outsider responses.
+
+\section{Teaching witness}
+
+In the hardened model use
+\[
+ C=\{a,b,ss\},\qquad
+ \alpha_C(a)=attack,\ \alpha_C(b)=attack,\ \alpha_C(ss)=relay.
+\]
+Varying the four outsider components yields the outcome set
+\[
+ \{channel\_open,internet\_access,credentials\_obtained,
+ external\_compromise\}.
+\]
+Every member satisfies $channel$, so this coalition can enforce $channel$.
+The outcome $channel\_open$ does not satisfy $internet$, so the same coalition
+cannot enforce $internet$. This separates a single possible trace from an
+adversarial guarantee.
+
+\section{Exhaustive equivalence test}
+
+For every $s\in\States$, $C\subseteq\Agents$, and $X\subseteq\States$, the
+showcase compares the derived query with an independent brute-force predicate:
+\[
+ \mathrm{brute}(s,C,X)\iff
+ \exists\alpha_C\;\forall\alpha_{\Agents\setminus C}:
+ \delta(s,\alpha_C\cup\alpha_{\Agents\setminus C})\in X.
+\]
+The assertion is
+\[
+ \mathrm{derived.can\_enforce}(s,C,X)=\mathrm{brute}(s,C,X).
+\]
+The right-hand side calls $\delta$ directly and never calls $\Eff$. Since there
+are six states, all $2^6=64$ target sets are enumerated. This is a finite,
+exhaustive regression of the executable semantics and its effectivity summary.
+
+\section{Scope, cost, and abstraction boundary}
+
+The model is one-step and bounded. QCL here is not a temporal logic; terminal
+self-loops do not assert a temporal safety property. Timing, retries, races,
+hidden channels, cryptographic identity, Kubernetes behavior, and LLM
+intentionality are outside the model.
+
+The result proves only properties of $G$. Applying it to real infrastructure
+requires a separate refinement or simulation argument connecting concrete
+steps to $\delta$. Explicit enumeration costs exponentially in the number of
+agents: $2^{|\Agents|}$ coalitions and, in the worst case,
+$\prod_i|\Act(i)|$ full profiles. Symbolic transition relations, SAT/SMT,
+BDDs, symmetry reduction, and compositional abstractions are possible future
+extensions while preserving $\delta$ as semantic authority.
+
+\end{document}
