@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: safeops-demo
-  labels:
-    safeops.qcl.io/enforced: "true"
