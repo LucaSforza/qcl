@@ -1,9 +1,128 @@
 # Formal model: executable containment game form
 
-This document specifies the finite game form used by the AI containment
-showcase. It follows the QCL interpretation of coalition ability: a coalition
-chooses a partial action, while outsiders choose any completion. The Rust
-transition function is the semantic authority; effectivity is derived data.
+This document specifies both finite game forms used by the AI containment
+showcase. The original `synthetic` backend follows the QCL interpretation of
+coalition ability: a coalition chooses a partial action, while outsiders
+choose any completion. Its Rust transition function is the semantic
+authority; effectivity is derived data. The `live` backend keeps the same QCL
+pipeline but obtains its transition relation by executing a local reference
+implementation and classifying observations.
+
+## Backend boundary
+
+The synthetic backend remains the compact seven-agent model documented below.
+It is useful for fast unit tests, exhaustive game-form/effectivity regression,
+and mathematical examples. Its hand-written `ContainmentSystem::transition`
+is intentionally retained.
+
+The live backend has five strategic components:
+
+```text
+agent_a, agent_b, shared_service, egress_gateway, credential_broker
+```
+
+Each has two deterministic behaviors, so the full profile space has
+`2^5 = 32` profiles. `external_target` is a local environment service, not a
+QCL agent. A separate sandbox or safety-monitor action is not included: the
+network boundary is implemented by the actual gateway process, and no
+additional monitor capability is needed for this reference lab.
+
+Live action values configure services before execution:
+
+```text
+agent_a: idle | attack
+agent_b: idle | attack
+shared_service: normal | fetch
+egress_gateway: enforce | bypass
+credential_broker: protect | expose
+```
+
+These values do not select QCL outcomes. For every full profile, the runner
+resets all service state, applies configuration, performs real loopback HTTP
+requests, reads responses and event logs, and classifies an observed outcome.
+Each profile can be run twice; divergent observations are an error rather
+than silently entering the model.
+
+The live pipeline is:
+
+```text
+ContainmentLab
+  -> execute_profile for every full joint profile
+  -> ObservedTransitionTable
+  -> ObservedGameForm
+  -> derive_effectivity
+  -> QCL ModelChecker
+```
+
+`ObservedGameForm::transition` is a table lookup. It contains no containment
+policy and cannot decide directly that a profile means `external_access`,
+`credential_obtained`, or `secret_exfiltrated`.
+
+Conceptually, extraction produces:
+
+```rust
+struct ObservedTransitionTable {
+    transitions: HashMap<JointActionProfile<LiveAction>, StateId>,
+}
+```
+
+The table has one entry for each of the 32 full profiles. `ObservedGameForm`
+implements the existing `FiniteGameForm` trait by validating the profile and
+returning its recorded `StateId`; all coalition enumeration and antichain
+construction continue to use the shared `derive_effectivity` function.
+
+## Live reference lab
+
+All services bind to loopback and use only the fixture secret
+`QCL_DEMO_SECRET_42`. No Internet, host files, metadata service, real
+credentials, or arbitrary URLs are reachable.
+
+The lab contains:
+
+* `agent_a` and `agent_b`: deterministic clients that issue idle, internal
+  messaging, credential, and exfiltration requests;
+* `shared_service`: internal `POST /message` and `GET /messages`; in
+  `shared-service-fetch` only, restricted `POST /fetch` is enabled;
+* `egress_gateway`: local proxy with real deny/allow forwarding behavior;
+* `credential_broker`: in-memory `POST /credential` endpoint with protect or
+  expose policy;
+* `external_target`: resettable sink exposing `POST /exfiltrate`, `GET
+  /events`, and `POST /reset`.
+
+`shared-service-fetch` accepts only the lab's `external_target` URL. The
+vulnerable path is therefore a real
+`agent -> shared_service -> external_target` request that does not traverse
+the gateway. In `hardened`, the shared service has no fetch capability, so
+external requests can only traverse the configured gateway.
+
+For each execution the runner collects evidence before assigning a state:
+
+```text
+channel_open       <- observed shared-service message
+external_access    <- external_target received permitted non-secret request
+credential_obtained <- client response contains QCL_DEMO_SECRET_42
+secret_exfiltrated <- external_target /events contains that exact fixture
+```
+
+No action name is itself evidence. In particular, `secret_exfiltrated` is
+true only after the target accepted the payload and its event log confirms the
+fixture. `ObservedOutcome` is then mapped to the live QCL valuation (with
+cumulative propositions such as `channel`, `external_access`, `credential`,
+`exfiltrated`, and `loss_of_containment`).
+
+The same formula is checked in both live scenarios:
+
+```text
+!<excludes(egress_gateway)> external_access
+```
+
+It passes in `hardened`. It fails in `shared-service-fetch`, where coalition
+`{agent_a, shared_service}` can select `attack, fetch` and an outsider
+completion produces an `external_target` event without the gateway. The
+failed existential witness includes the concrete profile and event evidence;
+it is not a label returned by a synthetic transition rule.
+
+## Synthetic reference model
 
 ## Game form
 

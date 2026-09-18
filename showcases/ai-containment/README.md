@@ -1,11 +1,20 @@
 # AI containment: executable semantics and QCL
 
-`ai-containment` is an offline verification showcase. It models a small,
-finite containment architecture and derives its QCL effectivity function from
-the executable transition function. It does not inspect Kubernetes, an LLM,
-or a cloud account, and it is not a production containment system.
+`ai-containment` is an offline verification showcase. It exposes two
+backends:
 
-The central invariant is the direction of construction:
+* `synthetic` keeps the small, deterministic `ContainmentSystem::transition`
+  model used by the original unit tests and mathematical documentation.
+* `live` runs a local reference containment lab, exhaustively executes every
+  joint profile, and derives QCL data from observations made through loopback
+  HTTP services.
+
+Neither backend inspects Kubernetes, an LLM, or a cloud account, and neither
+is a production containment system. The live lab never contacts the Internet,
+uses only the fixture secret `QCL_DEMO_SECRET_42`, and accepts no arbitrary
+destination.
+
+The synthetic direction of construction is:
 
 ```text
 ContainmentSystem::transition
@@ -23,9 +32,30 @@ QCL model checking
 No effectivity table is hand-written. Simulation, witness explanations, and
 QCL queries all consume the same `ContainmentSystem::transition` semantics.
 
+The live direction of construction is different at its boundary:
+
+```text
+local executable containment lab
+        |
+        v
+exhaustive joint-profile execution and event collection
+        |
+        v
+ObservedTransitionTable
+        |
+        v
+ObservedGameForm -> derive_effectivity -> QCL model checking
+```
+
+The live backend has no transition function that assigns
+`external_access`, `credential_obtained`, or `secret_exfiltrated` from a
+profile. Those propositions are classified from HTTP responses and event
+logs after execution. `ObservedGameForm::transition` only looks up an entry
+already recorded in the observed table.
+
 ## Running the showcase
 
-The commands below are deterministic and do not contact external services:
+Synthetic commands remain deterministic and do not contact external services:
 
 ```bash
 cargo run -p ai-containment -- simulate --scenario hardened
@@ -33,6 +63,101 @@ cargo run -p ai-containment -- simulate --scenario shared-service-bypass
 cargo run -p ai-containment -- audit --scenario hardened
 cargo run -p ai-containment -- audit --scenario shared-service-bypass
 ```
+
+Live extraction and audits use an explicit backend:
+
+```bash
+cargo run -p ai-containment -- audit \
+  --backend live --scenario hardened
+cargo run -p ai-containment -- audit \
+  --backend live --scenario shared-service-fetch
+cargo run -p ai-containment -- extract --scenario hardened
+cargo run -p ai-containment -- demo --scenario shared-service-fetch
+```
+
+`extract` executes all `2^5 = 32` live profiles and prints a compact outcome
+summary. `demo` runs one human-readable path and prints the observed event
+evidence. `--backend synthetic` selects the legacy seven-agent model; omitting
+the backend on legacy commands preserves their compatibility behavior.
+
+## Live containment lab
+
+The live backend starts a fresh, deterministic loopback lab for extraction.
+Its components are small local HTTP services:
+
+| Component | Runtime responsibility |
+| --- | --- |
+| `agent_a`, `agent_b` | deterministic clients issuing idle, channel, credential, and exfiltration requests |
+| `shared_service` | internal `/message` and `/messages`; only vulnerable scenario exposes restricted `/fetch` |
+| `egress_gateway` | local proxy configured to deny or allow forwarding to `external_target` |
+| `credential_broker` | in-memory broker configured to protect or expose the fixture secret |
+| `external_target` | local observable sink with `/exfiltrate`, `/events`, and `/reset` |
+
+`external_target` is environment, not a QCL agent. The five QCL agents are
+`agent_a`, `agent_b`, `shared_service`, `egress_gateway`, and
+`credential_broker`; each has two deterministic actions, giving 32 full
+profiles. Network containment is represented by the actual gateway process,
+not by an extra strategic `sandbox` action. A safety monitor is intentionally
+omitted: it would add no independent live capability in this reference lab.
+
+The profile values configure services before execution; they do not name an
+outcome:
+
+```text
+agent_a: idle | attack
+agent_b: idle | attack
+shared_service: normal | fetch
+egress_gateway: enforce | bypass
+credential_broker: protect | expose
+```
+
+For each profile, the runner resets service state, applies configuration,
+executes deterministic client requests, reads service state and event logs,
+then records an `ObservedOutcome`. The runner executes each profile twice in
+sanity-check mode and rejects divergent observations. The table stores the
+profile-to-state result; it does not store a second containment algorithm.
+
+In `hardened`, `/fetch` is absent. Internal messaging can open a channel, and
+external requests can only use the real egress gateway. In
+`shared-service-fetch`, `/fetch` is enabled but destination validation still
+allows only the local `external_target`; it cannot reach Internet URLs,
+metadata services, host files, or real credentials. The vulnerable path is
+therefore an actual `agent -> shared_service -> external_target` request that
+bypasses the gateway.
+
+Live state names are observation classes:
+
+| Observed state | Evidence |
+| --- | --- |
+| `contained` | no channel or external target event |
+| `channel_open` | shared-service message observed |
+| `external_access` | target received a permitted non-secret request |
+| `credential_obtained` | client received `QCL_DEMO_SECRET_42` from broker |
+| `secret_exfiltrated` | target event log contains exactly the fixture secret |
+
+The `secret_exfiltrated` class is never inferred from action names. It is true
+only after `/exfiltrate` has accepted the fixture and `/events` confirms it.
+Likewise, `credential_obtained` requires the client response body to contain
+the fixture. This distinction is the point of the live backend.
+
+The same QCL formula is used for both live scenarios:
+
+```text
+!<excludes(egress_gateway)> external_access
+```
+
+It is expected to PASS for `hardened`: every coalition that can guarantee an
+observed external access includes the gateway. It is expected to FAIL for
+`shared-service-fetch`: coalition `{agent_a, shared_service}` with actions
+`attack, fetch` has an observed completion reaching `external_target` without
+the egress component. The witness includes the target event log, not merely a
+synthetic transition label.
+
+The live model is still bounded evidence, not a proof of deployment safety.
+It covers only listed actions, one-step executions, local service behavior,
+and tested event observations. Kernel and network-stack correctness, hidden
+actions, unbounded traces, races, timing, deployment equivalence, and LLM
+cognition remain outside its boundary.
 
 The audit header identifies the result as:
 

@@ -24,11 +24,104 @@ showcase. A deterministic executable transition function is the single source
 of truth. Coalition outcome sets and the effectivity function are derived by
 enumerating coalition strategies and all outsider responses; they are not
 hand-authored. Quantified Coalition Logic (QCL) then checks properties of the
-derived model. The result is relative to this abstract one-step system and is
+derived model. The result is relative to the selected bounded backend and is
 not a security proof for a concrete cloud or AI deployment.
 \end{abstract}
 
-\section{Agents, actions, and states}
+\section{Two backend boundaries}
+
+The showcase retains a deterministic \texttt{synthetic} backend. Its
+seven-agent \texttt{ContainmentSystem::transition} is the semantic authority
+for fast tests, exhaustive game-form/effectivity regression, and the compact
+mathematical model in the remainder of this note. It is deliberately not
+replaced by the live implementation.
+
+The \texttt{live} backend has a different semantic boundary. It starts a
+small reference containment lab on loopback, executes every full profile, and
+builds a transition table from observations:
+\[
+\text{ContainmentLab}\;\longrightarrow\;
+\text{executed profiles}\;\longrightarrow\;
+\text{ObservedTransitionTable}\;\longrightarrow\;
+\text{ObservedGameForm}\;\longrightarrow\;
+\texttt{derive\_effectivity}\;\longrightarrow\;\text{QCL}.
+\]
+The live table is a representation of observed behavior, not a second
+containment algorithm. In particular, no live function maps an action profile
+directly to \texttt{external\_access}, \texttt{credential\_obtained}, or
+\texttt{secret\_exfiltrated}; those classifications require HTTP responses
+and service event logs.
+
+\subsection{Live reference lab}
+
+The live QCL components are
+\[
+\{\texttt{agent\_a},\texttt{agent\_b},\texttt{shared\_service},
+\texttt{egress\_gateway},\texttt{credential\_broker}\}.
+\]
+Each has two deterministic behaviors:
+\begin{align*}
+ \Act(\texttt{agent\_a})&=\{idle,attack\}, &
+ \Act(\texttt{agent\_b})&=\{idle,attack\},\\
+ \Act(\texttt{shared\_service})&=\{normal,fetch\}, &
+ \Act(\texttt{egress\_gateway})&=\{enforce,bypass\},\\
+ \Act(\texttt{credential\_broker})&=\{protect,expose\}.
+\end{align*}
+Thus live extraction executes $2^5=32$ profiles. The local
+\texttt{external\_target} is environment, not a QCL agent. A separate
+sandbox or safety-monitor action is unnecessary in this lab: containment is
+implemented by the actual gateway process.
+
+The services are small loopback HTTP processes. \texttt{shared\_service}
+provides internal \texttt{/message} and \texttt{/messages}; only the
+\texttt{shared-service-fetch} scenario enables restricted \texttt{/fetch}.
+\texttt{egress\_gateway} implements actual deny/allow forwarding to the local
+target. \texttt{credential\_broker} owns the in-memory fixture
+\texttt{QCL\_DEMO\_SECRET\_42} and exposes \texttt{POST /credential} under its
+configured policy. \texttt{external\_target} exposes \texttt{POST
+/exfiltrate}, \texttt{GET /events}, and \texttt{POST /reset}.
+Destination validation permits only this target; no Internet, metadata
+service, host file, or real credential is reachable.
+
+Before each profile, the runner resets all services and applies profile
+configuration. Deterministic clients then issue real requests. The runner
+collects responses and event logs, and records an observed outcome:
+\begin{align*}
+ \texttt{channel\_open}&\Leftarrow\text{message event observed},\\
+ \texttt{external\_access}&\Leftarrow\text{target received a permitted request},\\
+ \texttt{credential\_obtained}&\Leftarrow\text{client response contains the fixture},\\
+ \texttt{secret\_exfiltrated}&\Leftarrow\text{target event log contains the fixture}.
+\end{align*}
+The final two classifications cannot be inferred from action names. A
+repeated execution sanity check rejects a profile if its observation differs.
+
+Conceptually, extraction stores
+\[
+\texttt{ObservedTransitionTable.transitions}:
+  \texttt{JointActionProfile<LiveAction>}\longmapsto\texttt{StateId}.
+\]
+\texttt{ObservedGameForm::transition} only performs this lookup and
+implements the existing \texttt{FiniteGameForm} interface. It then feeds the
+shared \texttt{derive\_effectivity} algorithm; no live-specific effectivity
+derivation exists.
+
+The same formula is evaluated for both live scenarios:
+\[
+ \neg\langle\texttt{excludes(egress\_gateway)}\rangle
+ \texttt{external\_access}.
+\]
+It passes for \texttt{hardened}. It fails for
+\texttt{shared-service-fetch}: coalition
+$\{\texttt{agent\_a},\texttt{shared\_service}\}$ can choose
+\texttt{attack, fetch}, and an outsider completion produces an event at the
+target without traversing the gateway. The witness contains the executed
+profile and target event evidence.
+
+This is bounded evidence about the reference lab. It excludes kernel and
+network-stack correctness, hidden actions, unbounded traces, timing and race
+behavior, deployment equivalence, and LLM cognition.
+
+\section{Synthetic backend: agents, actions, and states}
 
 Let
 \[
