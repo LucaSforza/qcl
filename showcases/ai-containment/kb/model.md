@@ -204,6 +204,55 @@ QCL is one-step propositional coalition logic in this model. It has no
 temporal interpretation merely because the input is called a `state`; a
 terminal self-loop does not add a temporal guarantee.
 
+## Counterexample semantics
+
+Witness generation follows the formula's modality rather than reusing one
+generic notion of counterexample. For a target state denotation `[[phi]]`:
+
+```text
+can_enforce(s,C,phi)
+iff exists a_C . forall a_not_C .
+    delta(s, a_C union a_not_C) in [[phi]]
+```
+
+Therefore a failed negated existential has a positive existential witness:
+
+```text
+!<P> phi is false iff
+exists C . P(C) and can_enforce(s,C,phi)
+```
+
+The witness must include `C`, one partial strategy `a_C`, and the complete
+`Out(s,C,a_C)` set, with every outcome satisfying `phi`. This is different
+from a failed universal formula:
+
+```text
+[P] phi is false iff
+exists C . P(C) and not can_enforce(s,C,phi)
+```
+
+Expanding the negation gives the required universal counterexample condition:
+
+```text
+exists C . P(C) and forall a_C . exists a_not_C .
+    delta(s, a_C union a_not_C) not in [[phi]]
+```
+
+The explanation layer must verify this condition before calling `C` a
+counterexample. It can print one coalition strategy and one violating outsider
+completion, but must state that every available coalition strategy has some
+outsider response violating `phi`. A coalition strategy that enforces
+`compromised` does not refute `[P] !compromised` if another strategy of the
+same coalition enforces `!compromised`.
+
+For `[includes(safety_monitor)] !compromised` in
+`shared-service-bypass`, `{safety_monitor}` is the preferred minimal witness:
+the monitor's displayed action (for example `block`) can be paired with an
+outsider completion where both AI agents attack and the shared service relays,
+yielding `external_compromise`. The implementation must establish the same
+existence of a violating outsider response for every monitor action before
+printing the universal counterexample.
+
 ## Exhaustive equivalence property
 
 The key test independently computes the right-hand side for every `s`, `C`,

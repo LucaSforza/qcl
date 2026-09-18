@@ -42,9 +42,12 @@ offline verification of an executable abstract containment model
 
 It prints the scenario, agents, coalition/profile counts, each QCL property,
 PASS or FAIL, and a strategy/outcome witness. A failed existential property
-prints a coalition and strategy that disproves it. A failed universal property
-prints a matching coalition and an outsider response that breaks the claimed
-guarantee.
+prints a coalition and strategy that witnesses the existential ability. A
+failed universal property prints a matching coalition that cannot guarantee
+the target, together with one adversarial outsider response for a displayed
+coalition strategy. The explanation also states that every available
+coalition strategy has some outsider response that breaks the target; one
+displayed response alone is not the universal counterexample.
 
 ## Components and action space
 
@@ -236,6 +239,57 @@ monitor can guarantee `!compromised`.
 Boolean dual of `<P>`: the quantifier order for `[P] phi` is “for every
 matching coalition, there exists an enforcing outcome set”, while negating an
 existential modality would quantify over a different object.
+
+## Witnesses and counterexamples
+
+The presentation layer preserves the quantifier order of each modality. For
+an existential formula, the positive witness is:
+
+```text
+<P> phi is true iff
+    exists coalition C . P(C) and exists strategy a_C .
+        forall outsider responses a_not_C .
+            delta(start, a_C union a_not_C) satisfies phi
+```
+
+Consequently, when `!<P> phi` is false, its counterexample is exactly such a
+positive existential witness. It must show a matching coalition, one coalition
+strategy, and the complete possible-outcome set for that strategy; every
+outcome in that set satisfies `phi`.
+
+Universal failure has a different shape. A counterexample to `[P] phi` is a
+coalition that matches `P` but has no strategy capable of enforcing `phi`:
+
+```text
+[P] phi is false iff
+    exists coalition C . P(C) and forall strategies a_C .
+        exists outsider response a_not_C .
+            delta(start, a_C union a_not_C) does not satisfy phi
+```
+
+The presentation may display one strategy and one adversarial outsider
+response, but it validates the `forall strategy / exists response` condition
+before labelling the coalition a universal counterexample. A strategy that
+forces `compromised` is not by itself a counterexample to `[P] !compromised`:
+the same coalition might have a different strategy that forces `!compromised`.
+
+In `shared-service-bypass`, the minimal didactic counterexample to
+`[includes(safety_monitor)] !compromised` is normally:
+
+```text
+counterexample coalition: {safety_monitor}
+coalition strategy: safety_monitor = block
+adversarial outsider response:
+  agent_a = attack, agent_b = attack, shared_service = relay, ...
+result: external_compromise
+```
+
+The omitted outsider actions can be chosen arbitrarily because the bypass
+transition reaches `external_compromise` for every coordinated attack/relay
+profile. The important claim is that every strategy available to
+`safety_monitor` has at least one such outsider completion. This is distinct
+from the failed `!<P> phi` properties, whose output is a positive strategy
+witness rather than a coalition that lacks all enforcing strategies.
 
 ## Exhaustive semantic equivalence test
 
