@@ -15,7 +15,7 @@ include = [
 ]
 
 [workspace]
-members = ["showcases/safeops-k8s"]
+members = ["showcases/safeops-k8s", "showcases/ai-containment"]
 default-members = ["."]
 
 [dependencies]
