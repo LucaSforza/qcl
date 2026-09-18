@@ -165,6 +165,37 @@ the Boolean dual of the diamond: the intended universal quantifier ranges
 over coalitions, while the ability test still contains an existential
 coalition strategy and universal outsider responses.
 
+\section{Witnesses and counterexamples}
+
+Failure explanations must follow the outer QCL connective. If
+$\neg\langle P\rangle\varphi$ is false, its counterexample is a positive
+existential witness:
+\[
+ \exists C\subseteq\Agents:\ C\models P\ \land\
+ \exists\alpha_C:\ \Out(s,C,\alpha_C)\subseteq\denote{\varphi}_M.
+\]
+It prints $C$, $\alpha_C$, and every possible outcome, all of which satisfy
+$\varphi$. This is not a failure of a defensive strategy.
+
+Conversely, if $[P]\varphi$ is false, its counterexample is a coalition
+$C$ satisfying $P$ that has \emph{no} enforcing strategy:
+\[
+ \exists C\subseteq\Agents:\ C\models P\ \land\
+ \forall\alpha_C\ \exists\alpha_{\Agents\setminus C}:\
+ \delta(s,\alpha_C\cup\alpha_{\Agents\setminus C})
+ \notin\denote{\varphi}_M.
+\]
+The renderer checks this quantifier order before displaying a coalition. It
+shows one coalition strategy, one adversarial outsider completion that breaks
+the target, and states explicitly that every available coalition strategy has
+such a completion. An offensive strategy reaching a bad state alone is never
+evidence that a coalition lacks a different defensive strategy.
+
+For example, in the bypass scenario $\{sm\}$ matches
+$includes(sm)$ but cannot enforce $\neg compromised$: both \texttt{block}
+and \texttt{miss} have outsider completions with $a=b=attack$ and
+$ss=relay$, yielding $external\_compromise$.
+
 \section{Teaching witness}
 
 In the hardened model use
