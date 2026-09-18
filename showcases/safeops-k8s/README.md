@@ -26,6 +26,23 @@ The scenario demonstrates policy decisions only: safe operations, a
 human-gated image update, and deletion blocked by an unsafe outcome. It does
 not claim that an operation was executed and prints no chain-of-thought.
 
+## Offline zero-trust control-plane audit
+
+Run synthetic, reproducible coalition-capability audits:
+
+```bash
+cargo run -p safeops-k8s -- audit --scenario secure
+cargo run -p safeops-k8s -- audit --scenario privilege-escalation
+cargo run -p safeops-k8s -- audit --scenario break-glass-bypass
+```
+
+This mode uses neither LLM nor Kubernetes/cloud API. It builds a deterministic
+QCL model of abstract security outcomes and prints formula results plus concrete
+counterexample coalitions for intentionally unsafe scenarios. It does not
+inspect a real cluster or replace runtime RBAC, admission policy/OPA, grant
+checks, or executor restrictions. Full model, threat assumptions, QCL
+semantics, formulas, limits, and future work: [zero-trust audit contract](kb/zero-trust-audit.md).
+
 ## Interactive timeline
 
 After applying the fixture and selecting a real provider, start the terminal:
